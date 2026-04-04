@@ -1,0 +1,198 @@
+import SwiftUI
+#if canImport(UIKit)
+import UIKit
+#endif
+
+struct RoutePlanDocumentSheetView: View {
+    private struct MarkdownLine: Identifiable {
+        enum Style {
+            case title
+            case section
+            case subsection
+            case bullet(indentLevel: Int)
+            case numbered(marker: String)
+            case paragraph
+            case spacer
+        }
+
+        let id = UUID()
+        let style: Style
+        let text: String
+    }
+
+    let markdown: String
+
+    @Environment(\.dismiss) private var dismiss
+    @State private var hasCopied = false
+
+    private var hasContent: Bool {
+        !markdown.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+    }
+
+    private var markdownLines: [MarkdownLine] {
+        markdown
+            .components(separatedBy: .newlines)
+            .map(parseMarkdownLine)
+    }
+
+    var body: some View {
+        NavigationStack {
+            ScrollView {
+                if hasContent {
+                    LazyVStack(alignment: .leading, spacing: 12) {
+                        ForEach(markdownLines) { line in
+                            markdownLineView(line)
+                        }
+                    }
+                        .padding(16)
+                } else {
+                    ContentUnavailableView(
+                        "暂无路线规划内容",
+                        systemImage: "doc.text.magnifyingglass",
+                        description: Text("请先生成路线，再创建 Markdown 规划文档。")
+                    )
+                    .frame(maxWidth: .infinity)
+                    .padding(16)
+                }
+            }
+            .background(Color(.systemGroupedBackground))
+            .navigationTitle("路线规划 Markdown")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .topBarLeading) {
+                    Button("关闭") {
+                        dismiss()
+                    }
+                }
+
+                ToolbarItem(placement: .topBarTrailing) {
+                    Button {
+                        copyMarkdown()
+                    } label: {
+                        Image(systemName: hasCopied ? "checkmark" : "doc.on.doc")
+                            .font(.body.weight(.semibold))
+                    }
+                    .accessibilityLabel(hasCopied ? "已复制规划内容" : "复制规划内容")
+                }
+            }
+            .safeAreaInset(edge: .bottom) {
+                if hasCopied {
+                    Label("已复制到剪贴板", systemImage: "checkmark.circle.fill")
+                        .font(.footnote)
+                        .foregroundStyle(.green)
+                        .padding(.horizontal, 12)
+                        .padding(.vertical, 8)
+                        .background(.regularMaterial, in: Capsule())
+                        .padding(.bottom, 12)
+                }
+            }
+        }
+    }
+
+    private func copyMarkdown() {
+        #if canImport(UIKit)
+        UIPasteboard.general.string = markdown
+        #endif
+        hasCopied = true
+    }
+
+    @ViewBuilder
+    private func markdownLineView(_ line: MarkdownLine) -> some View {
+        switch line.style {
+        case .title:
+            Text(line.text)
+                .font(.title2.weight(.bold))
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding(.bottom, 4)
+        case .section:
+            Text(line.text)
+                .font(.headline)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding(.top, 6)
+        case .subsection:
+            Text(line.text)
+                .font(.subheadline.weight(.semibold))
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding(.top, 2)
+        case .bullet(let indentLevel):
+            HStack(alignment: .top, spacing: 8) {
+                Text("•")
+                    .font(.body.weight(.semibold))
+                Text(line.text)
+                    .font(.body)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+            }
+            .padding(.leading, CGFloat(indentLevel) * 18)
+        case .numbered(let marker):
+            HStack(alignment: .top, spacing: 8) {
+                Text(marker)
+                    .font(.body.weight(.semibold))
+                Text(line.text)
+                    .font(.body)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+            }
+        case .paragraph:
+            Text(line.text)
+                .font(.body)
+                .frame(maxWidth: .infinity, alignment: .leading)
+        case .spacer:
+            Color.clear
+                .frame(height: 2)
+        }
+    }
+
+    private func parseMarkdownLine(_ rawLine: String) -> MarkdownLine {
+        let trimmed = rawLine.trimmingCharacters(in: .whitespaces)
+        guard !trimmed.isEmpty else {
+            return MarkdownLine(style: .spacer, text: "")
+        }
+
+        if trimmed.hasPrefix("# ") {
+            return MarkdownLine(style: .title, text: String(trimmed.dropFirst(2)))
+        }
+
+        if trimmed.hasPrefix("## ") {
+            return MarkdownLine(style: .section, text: String(trimmed.dropFirst(3)))
+        }
+
+        if trimmed.hasPrefix("### ") {
+            return MarkdownLine(style: .subsection, text: String(trimmed.dropFirst(4)))
+        }
+
+        if rawLine.hasBulletPrefix {
+            return MarkdownLine(
+                style: .bullet(indentLevel: rawLine.markdownIndentLevel),
+                text: String(trimmed.dropFirst(2))
+            )
+        }
+
+        if let numberedMarker = trimmed.markdownNumberedMarker {
+            let textStartIndex = trimmed.index(trimmed.startIndex, offsetBy: numberedMarker.count + 1)
+            let text = String(trimmed[textStartIndex...]).trimmingCharacters(in: .whitespaces)
+            return MarkdownLine(style: .numbered(marker: numberedMarker), text: text)
+        }
+
+        return MarkdownLine(style: .paragraph, text: trimmed)
+    }
+}
+
+private extension String {
+    var hasBulletPrefix: Bool {
+        trimmingCharacters(in: .whitespaces).hasPrefix("- ")
+    }
+
+    var markdownIndentLevel: Int {
+        let leadingSpaces = prefix { $0 == " " }.count
+        return leadingSpaces >= 2 ? 1 : 0
+    }
+
+    var markdownNumberedMarker: String? {
+        let parts = split(separator: " ", maxSplits: 1, omittingEmptySubsequences: true)
+        guard let candidate = parts.first, candidate.last == "." else { return nil }
+
+        let digits = candidate.dropLast()
+        guard !digits.isEmpty, digits.allSatisfy(\.isNumber) else { return nil }
+
+        return String(candidate)
+    }
+}

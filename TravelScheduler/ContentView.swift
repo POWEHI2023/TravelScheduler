@@ -40,12 +40,6 @@ struct ContentView: View {
                     .presentationDetents([.medium, .large])
                     .presentationDragIndicator(.visible)
             }
-            .onChange(of: viewModel.plannedStops.map(\.id)) { _, _ in
-                viewModel.syncRouteEndpointsWithStops()
-            }
-            .onChange(of: viewModel.startStopID) { _, newStartID in
-                viewModel.handleStartStopChanged(newStartID)
-            }
             .onDisappear {
                 viewModel.onDisappear()
             }
@@ -56,15 +50,15 @@ struct ContentView: View {
         Map(position: $viewModel.cameraPosition) {
             ForEach(Array(viewModel.plannedStops.enumerated()), id: \.element.id) { index, stop in
                 Marker("\(index + 1). \(stop.name)", coordinate: stop.coordinate)
-                    .tint(viewModel.colorForStop(at: index))
+                    .tint(RoutePalette.color(at: index))
             }
 
             ForEach(Array(viewModel.routeSegments.enumerated()), id: \.element.id) { index, segment in
-                if !viewModel.hiddenSegmentIDs.contains(segment.id) {
+                if segment.showsOnMap && !viewModel.hiddenSegmentIDs.contains(segment.id) {
                     MapPolyline(segment.polyline)
                         .stroke(
-                            viewModel.colorForSegment(at: index),
-                            style: StrokeStyle(lineWidth: 5, lineCap: .round, lineJoin: .round)
+                            RoutePalette.color(at: index),
+                            style: strokeStyle(for: segment)
                         )
                 }
             }
@@ -79,39 +73,66 @@ struct ContentView: View {
     }
 
     private var overlayLayer: some View {
-        VStack {
+        VStack(spacing: 10) {
             if !viewModel.routeSegments.isEmpty {
                 RouteLegendView(
                     segments: viewModel.routeSegments,
                     hiddenSegmentIDs: viewModel.hiddenSegmentIDs,
-                    onToggle: viewModel.toggleSegmentVisibility
+                    onToggleVisibility: viewModel.toggleSegmentVisibility
                 )
                 .padding(.top, 8)
             }
 
             Spacer()
 
-            if let message = viewModel.statusMessage {
-                Text(message)
-                    .font(.footnote)
-                    .underline(isRouteUpdateMessage(message), color: .secondary)
-                    .padding(.horizontal, 12)
-                    .padding(.vertical, 8)
-                    .background(.ultraThinMaterial, in: Capsule())
-                    .padding(.bottom, 12)
-                    .onTapGesture {
-                        guard isRouteUpdateMessage(message), !viewModel.routeSegments.isEmpty else {
-                            return
-                        }
+            VStack(spacing: 8) {
+                if !viewModel.routeSegments.isEmpty {
+                    Button {
                         showRouteSegmentsSheet = true
+                    } label: {
+                        Text(viewModel.routeDetailsButtonTitle)
+                            .font(.footnote.weight(.semibold))
+                            .padding(.horizontal, 14)
+                            .padding(.vertical, 10)
+                            .background(.regularMaterial, in: Capsule())
                     }
+                    .buttonStyle(.plain)
+                }
+
+                if let routeStatus = viewModel.routeStatus {
+                    Text(routeStatus.message)
+                        .font(.footnote)
+                        .foregroundStyle(statusColor(for: routeStatus.tone))
+                        .padding(.horizontal, 12)
+                        .padding(.vertical, 8)
+                        .background(.ultraThinMaterial, in: Capsule())
+                }
             }
+            .padding(.bottom, 12)
         }
         .padding(.horizontal, 12)
     }
 
-    private func isRouteUpdateMessage(_ message: String) -> Bool {
-        message.hasPrefix("路线已更新，共")
+    private func statusColor(for tone: TripPlannerViewModel.StatusMessage.Tone) -> Color {
+        switch tone {
+        case .info:
+            return .secondary
+        case .success:
+            return .green
+        case .warning:
+            return .orange
+        case .error:
+            return .red
+        }
+    }
+
+    private func strokeStyle(for segment: RouteSegment) -> StrokeStyle {
+        switch segment.mapRenderStyle {
+        case .solid:
+            return StrokeStyle(lineWidth: 5, lineCap: .round, lineJoin: .round)
+        case .connector:
+            return StrokeStyle(lineWidth: 4, lineCap: .round, lineJoin: .round, dash: [8, 6])
+        }
     }
 }
 

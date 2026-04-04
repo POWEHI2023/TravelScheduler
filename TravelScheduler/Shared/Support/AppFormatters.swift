@@ -1,7 +1,6 @@
 import CoreLocation
 import Foundation
 
-@MainActor
 enum AppFormatters {
     private static let distanceFormatter: MeasurementFormatter = {
         let formatter = MeasurementFormatter()
@@ -16,6 +15,13 @@ enum AppFormatters {
         return formatter
     }()
 
+    private static let timestampFormatter: DateFormatter = {
+        let formatter = DateFormatter()
+        formatter.locale = Locale(identifier: "zh_CN_POSIX")
+        formatter.dateFormat = "yyyy-MM-dd HH:mm"
+        return formatter
+    }()
+
     static func distance(_ distance: CLLocationDistance) -> String {
         let measurement = Measurement(value: distance / 1000, unit: UnitLength.kilometers)
         return distanceFormatter.string(from: measurement)
@@ -24,5 +30,9 @@ enum AppFormatters {
     static func duration(_ duration: TimeInterval) -> String {
         durationFormatter.allowedUnits = duration >= 3600 ? [.hour, .minute] : [.minute]
         return durationFormatter.string(from: duration) ?? "--"
+    }
+
+    static func timestamp(_ date: Date) -> String {
+        timestampFormatter.string(from: date)
     }
 }

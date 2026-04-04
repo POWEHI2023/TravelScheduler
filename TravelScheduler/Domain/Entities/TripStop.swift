@@ -18,6 +18,22 @@ struct TripStop: Identifiable {
         mapItem.location.coordinate
     }
 
+    var routeCacheKey: String {
+        let latitude = Int((coordinate.latitude * 100_000).rounded())
+        let longitude = Int((coordinate.longitude * 100_000).rounded())
+        let normalizedName = name.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        return "\(normalizedName)|\(latitude)|\(longitude)"
+    }
+
+    var mapsCoordinateQueryValue: String {
+        String(
+            format: "%.6f,%.6f",
+            locale: Locale(identifier: "en_US_POSIX"),
+            coordinate.latitude,
+            coordinate.longitude
+        )
+    }
+
     func isSemanticallyDuplicate(of other: TripStop) -> Bool {
         name == other.name &&
         abs(coordinate.latitude - other.coordinate.latitude) < 0.0001 &&
