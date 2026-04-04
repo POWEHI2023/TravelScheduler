@@ -17,10 +17,10 @@ struct RouteLegendView: View {
                             .frame(width: 10, height: 10)
 
                         VStack(alignment: .leading, spacing: 2) {
-                            Text("第\(index + 1)段")
+                            Text(L10n.segmentOrdinal(index + 1))
                                 .font(.caption)
 
-                            Text(segment.travelMode.rawValue)
+                            Text(segment.travelMode.localizedName)
                                 .font(.caption2)
                                 .foregroundStyle(.secondary)
                         }
@@ -38,7 +38,7 @@ struct RouteLegendView: View {
                             Image(systemName: "arrow.up.right.square")
                                 .font(.caption2)
                                 .foregroundStyle(.secondary)
-                                .accessibilityLabel("该段需在 Apple 地图中查看")
+                                .accessibilityLabel(L10n.routeLegendExternalAccessibility)
                         }
                     }
                     .foregroundStyle(.primary)

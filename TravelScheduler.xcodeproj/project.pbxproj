@@ -86,10 +86,12 @@
 				};
 			};
 			buildConfigurationList = DB9BCC512F8131FB00D065C1 /* Build configuration list for PBXProject "TravelScheduler" */;
-			developmentRegion = en;
+			developmentRegion = "zh-Hans";
 			hasScannedForEncodings = 0;
 			knownRegions = (
+				"zh-Hans",
 				en,
+				"zh-Hant",
 				Base,
 			);
 			mainGroup = DB9BCC4D2F8131FB00D065C1;

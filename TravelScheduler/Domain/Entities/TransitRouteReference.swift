@@ -1,9 +1,9 @@
 import Foundation
 
 enum TransitRouteProvider: String, Hashable {
-    case appleMaps = "Apple 地图"
+    case appleMaps
 
-    var displayName: String { rawValue }
+    var displayName: String { L10n.transitProviderName(self) }
 }
 
 enum TransitPreference: String, CaseIterable, Hashable {
@@ -13,16 +13,7 @@ enum TransitPreference: String, CaseIterable, Hashable {
     case ferry
 
     var displayName: String {
-        switch self {
-        case .bus:
-            return "公交"
-        case .subway:
-            return "地铁"
-        case .commuter:
-            return "通勤铁路"
-        case .ferry:
-            return "轮渡"
-        }
+        L10n.transitPreferenceName(self)
     }
 
     var queryValue: String {
@@ -51,6 +42,7 @@ struct TransitRouteReference: Hashable {
     }
 
     var preferredModesDescription: String {
-        preferredModes.map(\.displayName).joined(separator: "、")
+        ListFormatter.localizedString(byJoining: preferredModes.map(\.displayName))
+            ?? preferredModes.map(\.displayName).joined(separator: ", ")
     }
 }

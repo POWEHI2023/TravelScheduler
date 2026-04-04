@@ -130,7 +130,7 @@ final class MapKitRoutePlanningService: RoutePlanningServing {
                 to: destinationStop,
                 requestedTravelMode: preferredMode,
                 mode: preferredMode,
-                warning: "该分段无法通过地图服务计算，已使用直线连接。"
+                warning: L10n.routeServiceStraightLineFallback
             )
         } catch {
             if error is CancellationError {
@@ -142,7 +142,9 @@ final class MapKitRoutePlanningService: RoutePlanningServing {
                 to: destinationStop,
                 requestedTravelMode: preferredMode,
                 mode: preferredMode,
-                warning: "\(reasonText(for: error, preferredMode: preferredMode))，已使用直线连接。"
+                warning: L10n.routeServiceStraightLineAfterReason(
+                    reasonText(for: error, preferredMode: preferredMode)
+                )
             )
         }
     }
@@ -177,7 +179,7 @@ final class MapKitRoutePlanningService: RoutePlanningServing {
             to: destinationStop,
             requestedTravelMode: .transit,
             mode: .transit,
-            warning: "原选择为公共交通，当前地区/时段未找到可用公交方案，且无法改用步行或驾车，已使用直线连接。",
+            warning: L10n.routeServiceTransitNoSolutionNoFallback,
             mapRenderStyle: .connector
         )
     }
@@ -213,7 +215,10 @@ final class MapKitRoutePlanningService: RoutePlanningServing {
                 if index == 0 {
                     warning = nil
                 } else {
-                    warning = "未找到\(preferredMode.rawValue)可达路线，已改用\(candidate.resolvedMode.rawValue)计算。"
+                    warning = L10n.routeServicePreferredFallback(
+                        preferredMode: preferredMode.localizedName,
+                        resolvedMode: candidate.resolvedMode.localizedName
+                    )
                 }
 
                 return RouteResolution(
@@ -254,7 +259,7 @@ final class MapKitRoutePlanningService: RoutePlanningServing {
                 let resolution = RouteResolution(
                     route: route,
                     resolvedMode: fallbackMode,
-                    warning: "原选择为公共交通，当前地区/时段未找到可用公交方案，已改用\(fallbackMode.rawValue)计算。"
+                    warning: L10n.routeServiceTransitFallbackMode(fallbackMode.localizedName)
                 )
 
                 return makeResolvedSegment(
@@ -337,7 +342,7 @@ final class MapKitRoutePlanningService: RoutePlanningServing {
             distance: 0,
             expectedTravelTime: expectedTravelTime,
             polyline: polyline,
-            routeName: "Apple 地图公共交通",
+            routeName: L10n.routeServiceAppleMapsTransitRouteName,
             details: [],
             representation: .externalTransit(transitReference),
             mapRenderStyle: .connector
@@ -360,7 +365,7 @@ final class MapKitRoutePlanningService: RoutePlanningServing {
             distance: 0,
             expectedTravelTime: 0,
             polyline: polyline,
-            details: [makeWarningDetail("该分段起终点坐标相同，已按原地停留处理。")],
+            details: [makeWarningDetail(L10n.routeServiceSameCoordinate)],
             representation: .inAppRoute,
             mapRenderStyle: requestedTravelMode == .transit ? .connector : .solid
         )
@@ -489,25 +494,27 @@ final class MapKitRoutePlanningService: RoutePlanningServing {
     }
 
     private func reasonText(for error: Error?, preferredMode: TravelMode) -> String {
-        guard let error else { return "\(preferredMode.rawValue)暂不可用" }
-        guard let mkError = error as? MKError else { return "\(preferredMode.rawValue)计算失败" }
+        guard let error else { return L10n.routeServiceModeUnavailable(preferredMode.localizedName) }
+        guard let mkError = error as? MKError else {
+            return L10n.routeServiceModeFailed(preferredMode.localizedName)
+        }
 
         switch mkError.code {
         case .directionsNotFound:
-            return "未找到\(preferredMode.rawValue)可达路线"
+            return L10n.routeServiceModeNotFound(preferredMode.localizedName)
         case .loadingThrottled:
-            return "地图服务请求过于频繁"
+            return L10n.routeServiceRequestThrottled
         case .serverFailure:
-            return "地图服务暂时不可用"
+            return L10n.routeServiceUnavailable
         default:
-            return "\(preferredMode.rawValue)计算失败"
+            return L10n.routeServiceModeFailed(preferredMode.localizedName)
         }
     }
 
     private func makeWarningDetail(_ warning: String) -> RouteSegment.Detail {
         RouteSegment.Detail(
             kind: .warning,
-            transportDescription: "提示",
+            transportDescription: L10n.commonWarningLabel,
             instruction: warning,
             distance: 0
         )
@@ -538,7 +545,7 @@ final class MapKitRoutePlanningService: RoutePlanningServing {
                     for: step.transportType,
                     resolvedMode: resolvedMode
                 ),
-                instruction: instruction.isEmpty ? "继续前往目的地" : instruction,
+                instruction: instruction.isEmpty ? L10n.routeServiceContinueToDestination : instruction,
                 notice: normalizedNotice,
                 distance: step.distance
             )
@@ -589,18 +596,18 @@ final class MapKitRoutePlanningService: RoutePlanningServing {
         resolvedMode: TravelMode
     ) -> String {
         if transportType.contains(.automobile) {
-            return TravelMode.driving.rawValue
+            return TravelMode.driving.localizedName
         }
 
         if transportType.contains(.walking) {
-            return TravelMode.walking.rawValue
+            return TravelMode.walking.localizedName
         }
 
         if transportType.contains(.transit) {
-            return TravelMode.transit.rawValue
+            return TravelMode.transit.localizedName
         }
 
-        return resolvedMode.rawValue
+        return resolvedMode.localizedName
     }
 
     private func withCacheLock<T>(_ body: () -> T) -> T {

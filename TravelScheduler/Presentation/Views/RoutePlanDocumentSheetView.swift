@@ -44,23 +44,23 @@ struct RoutePlanDocumentSheetView: View {
                             markdownLineView(line)
                         }
                     }
-                        .padding(16)
+                    .padding(16)
                 } else {
                     ContentUnavailableView(
-                        "暂无路线规划内容",
+                        L10n.routePlanDocumentEmptyTitle,
                         systemImage: "doc.text.magnifyingglass",
-                        description: Text("请先生成路线，再创建 Markdown 规划文档。")
+                        description: Text(L10n.routePlanDocumentEmptyDescription)
                     )
                     .frame(maxWidth: .infinity)
                     .padding(16)
                 }
             }
             .background(Color(.systemGroupedBackground))
-            .navigationTitle("路线规划 Markdown")
+            .navigationTitle(L10n.routePlanDocumentTitle)
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .topBarLeading) {
-                    Button("关闭") {
+                    Button(L10n.commonClose) {
                         dismiss()
                     }
                 }
@@ -72,12 +72,19 @@ struct RoutePlanDocumentSheetView: View {
                         Image(systemName: hasCopied ? "checkmark" : "doc.on.doc")
                             .font(.body.weight(.semibold))
                     }
-                    .accessibilityLabel(hasCopied ? "已复制规划内容" : "复制规划内容")
+                    .accessibilityLabel(
+                        hasCopied
+                            ? L10n.routePlanDocumentCopiedAccessibility
+                            : L10n.routePlanDocumentCopyAccessibility
+                    )
                 }
             }
             .safeAreaInset(edge: .bottom) {
                 if hasCopied {
-                    Label("已复制到剪贴板", systemImage: "checkmark.circle.fill")
+                    Label(
+                        L10n.routePlanDocumentCopiedToClipboard,
+                        systemImage: "checkmark.circle.fill"
+                    )
                         .font(.footnote)
                         .foregroundStyle(.green)
                         .padding(.horizontal, 12)

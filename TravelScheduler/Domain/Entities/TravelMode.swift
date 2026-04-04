@@ -1,7 +1,11 @@
 enum TravelMode: String, CaseIterable, Identifiable {
-    case driving = "驾车"
-    case walking = "步行"
-    case transit = "公共交通"
+    case driving
+    case walking
+    case transit
 
     var id: String { rawValue }
+
+    var localizedName: String {
+        L10n.travelModeName(self)
+    }
 }

@@ -12,14 +12,14 @@ struct ContentView: View {
                 mapLayer
                 overlayLayer
             }
-            .navigationTitle("旅行地图")
+            .navigationTitle(L10n.contentNavigationTitle)
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .topBarLeading) {
                     Button {
                         viewModel.fitMapToPlannedContent()
                     } label: {
-                        Label("定位路线", systemImage: "scope")
+                        Label(L10n.contentLocateRoute, systemImage: "scope")
                     }
                     .disabled(viewModel.plannedStops.isEmpty)
                 }
@@ -28,7 +28,7 @@ struct ContentView: View {
                     Button {
                         showSettings = true
                     } label: {
-                        Label("设置", systemImage: "slider.horizontal.3")
+                        Label(L10n.contentSettings, systemImage: "slider.horizontal.3")
                     }
                 }
             }

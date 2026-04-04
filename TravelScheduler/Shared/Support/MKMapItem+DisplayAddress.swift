@@ -13,6 +13,9 @@ extension MKMapItem {
         }
 
         let coordinate = location.coordinate
-        return String(format: "纬度 %.4f, 经度 %.4f", coordinate.latitude, coordinate.longitude)
+        return L10n.routeServiceCoordinateFallback(
+            latitude: coordinate.latitude,
+            longitude: coordinate.longitude
+        )
     }
 }

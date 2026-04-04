@@ -23,10 +23,10 @@ struct SettingsSheetView: View {
             }
             .listStyle(.insetGrouped)
             .environment(\.editMode, $editMode)
-            .navigationTitle("设置")
+            .navigationTitle(L10n.settingsTitle)
             .toolbar {
                 ToolbarItem(placement: .topBarTrailing) {
-                    Button("完成") {
+                    Button(L10n.commonDone) {
                         isPresented = false
                     }
                 }
@@ -38,14 +38,14 @@ struct SettingsSheetView: View {
     }
 
     private var searchSection: some View {
-        Section("搜索地点") {
-            TextField("输入景点、地标或地址", text: searchTextBinding)
+        Section(L10n.settingsSearchSection) {
+            TextField(L10n.settingsSearchPlaceholder, text: searchTextBinding)
                 .textInputAutocapitalization(.never)
                 .autocorrectionDisabled()
                 .submitLabel(.search)
 
             if viewModel.isSearching {
-                ProgressView("搜索中...")
+                ProgressView(L10n.settingsSearchLoading)
             }
 
             if let searchStatus = viewModel.searchStatus {
@@ -55,18 +55,22 @@ struct SettingsSheetView: View {
             if !viewModel.searchResults.isEmpty {
                 ForEach(viewModel.searchResults, id: \.self) { item in
                     VStack(alignment: .leading, spacing: 6) {
-                        Text(item.name ?? "未命名地点")
+                        Text(item.name ?? L10n.commonUnnamedPlace)
                             .font(.headline)
 
                         Text(item.displayAddress)
                             .font(.caption)
                             .foregroundStyle(.secondary)
 
-                        Button("添加到行程") {
+                        Button(L10n.settingsAddToItinerary) {
                             viewModel.addStop(from: item)
                         }
                         .buttonStyle(.bordered)
-                        .accessibilityLabel("添加\(item.name ?? "地点")到行程")
+                        .accessibilityLabel(
+                            L10n.settingsAddToItineraryAccessibility(
+                                name: item.name ?? L10n.commonPlace
+                            )
+                        )
                     }
                     .padding(.vertical, 4)
                 }
@@ -75,20 +79,20 @@ struct SettingsSheetView: View {
     }
 
     private var routePlanningSection: some View {
-        Section("路线规划") {
+        Section(L10n.settingsRoutePlanningSection) {
             if viewModel.plannedStops.isEmpty {
-                ContentUnavailableView("请先添加地点", systemImage: "mappin.and.ellipse")
+                ContentUnavailableView(L10n.settingsAddPlacesFirst, systemImage: "mappin.and.ellipse")
             } else {
-                Picker("起点", selection: startStopBinding) {
+                Picker(L10n.settingsRouteStart, selection: startStopBinding) {
                     ForEach(viewModel.plannedStops) { stop in
                         Text(stop.name).tag(Optional(stop.id))
                     }
                 }
 
-                Toggle("终点与起点相同（环线）", isOn: loopToStartBinding)
+                Toggle(L10n.settingsLoopToggle, isOn: loopToStartBinding)
 
                 if !viewModel.loopToStart {
-                    Picker("终点", selection: endStopBinding) {
+                    Picker(L10n.settingsRouteEnd, selection: endStopBinding) {
                         ForEach(viewModel.plannedStops) { stop in
                             Text(stop.name).tag(Optional(stop.id))
                         }
@@ -98,7 +102,7 @@ struct SettingsSheetView: View {
 
             if let routeOrderDescription = viewModel.routeOrderDescription {
                 VStack(alignment: .leading, spacing: 4) {
-                    Text("实际生成顺序")
+                    Text(L10n.settingsActualGenerationOrder)
                         .font(.caption)
                         .foregroundStyle(.secondary)
 
@@ -110,25 +114,35 @@ struct SettingsSheetView: View {
             Button {
                 Task { await viewModel.generateRoutePlan() }
             } label: {
-                Label("按已选起终点生成路线", systemImage: "point.topleft.down.curvedto.point.bottomright.up")
+                actionButtonLabel(
+                    title: L10n.settingsGenerateRoute,
+                    systemImage: "point.topleft.down.curvedto.point.bottomright.up"
+                )
             }
             .buttonStyle(.borderedProminent)
+            .controlSize(.large)
             .disabled(!viewModel.canGenerateRoute || viewModel.isPlanningRoute)
 
             if viewModel.isPlanningRoute {
-                ProgressView("路线计算中...")
+                ProgressView(L10n.settingsRouteLoading)
             }
 
             if !viewModel.routeSegments.isEmpty {
                 if viewModel.hasExternalTransitSegments {
-                    Label("部分公共交通分段不提供应用内路程估算", systemImage: "ruler")
+                    Label(L10n.settingsTransitNoInAppDistance, systemImage: "ruler")
                         .font(.footnote)
                         .foregroundStyle(.secondary)
                 } else {
-                    Label("总路程：\(AppFormatters.distance(viewModel.totalDistance))", systemImage: "ruler")
+                    Label(
+                        L10n.settingsTotalDistance(AppFormatters.distance(viewModel.totalDistance)),
+                        systemImage: "ruler"
+                    )
                 }
 
-                Label("总时长：\(AppFormatters.duration(viewModel.totalTravelTime))", systemImage: "clock")
+                Label(
+                    L10n.settingsTotalDuration(AppFormatters.duration(viewModel.totalTravelTime)),
+                    systemImage: "clock"
+                )
 
                 Text(viewModel.travelSuggestion)
                     .font(.footnote)
@@ -139,9 +153,13 @@ struct SettingsSheetView: View {
                         markdown: viewModel.makeRoutePlanMarkdownDocument()
                     )
                 } label: {
-                    Label("生成路线规划文档", systemImage: "doc.plaintext")
+                    actionButtonLabel(
+                        title: L10n.settingsGenerateRoutePlanDocument,
+                        systemImage: "doc.plaintext"
+                    )
                 }
                 .buttonStyle(.bordered)
+                .controlSize(.large)
             }
 
             if let routeStatus = viewModel.routeStatus {
@@ -151,18 +169,18 @@ struct SettingsSheetView: View {
     }
 
     private var routeLegModesSection: some View {
-        Section("分段通行方式") {
+        Section(L10n.settingsSegmentModesSection) {
             if viewModel.routeLegPlans.isEmpty {
                 ContentUnavailableView(
-                    "暂无可配置分段",
+                    L10n.settingsNoConfigurableSegmentsTitle,
                     systemImage: "point.topleft.down.curvedto.point.bottomright.up",
-                    description: Text("至少添加两个地点并确认起终点后可配置每一段的通行方式")
+                    description: Text(L10n.settingsNoConfigurableSegmentsDescription)
                 )
             } else {
                 ForEach(viewModel.routeLegPlans) { leg in
                     VStack(alignment: .leading, spacing: 10) {
                         HStack(spacing: 8) {
-                            Text("第\(leg.index + 1)段")
+                            Text(L10n.segmentOrdinal(leg.index + 1))
                                 .font(.caption)
                                 .foregroundStyle(.secondary)
 
@@ -171,9 +189,12 @@ struct SettingsSheetView: View {
                                 .lineLimit(1)
                         }
 
-                        Picker("第\(leg.index + 1)段通行方式", selection: segmentModeBinding(for: leg.leg)) {
+                        Picker(
+                            L10n.settingsSegmentModePickerLabel(index: leg.index + 1),
+                            selection: segmentModeBinding(for: leg.leg)
+                        ) {
                             ForEach(TravelMode.allCases) { mode in
-                                Text(mode.rawValue).tag(mode)
+                                Text(mode.localizedName).tag(mode)
                             }
                         }
                         .pickerStyle(.segmented)
@@ -189,9 +210,9 @@ struct SettingsSheetView: View {
     }
 
     private var selectedStopsSection: some View {
-        Section("已选地点") {
+        Section(L10n.settingsSelectedPlacesSection) {
             if viewModel.plannedStops.isEmpty {
-                ContentUnavailableView("还没有添加地点", systemImage: "list.bullet.rectangle")
+                ContentUnavailableView(L10n.settingsNoSelectedPlaces, systemImage: "list.bullet.rectangle")
             } else {
                 ForEach(Array(viewModel.plannedStops.enumerated()), id: \.element.id) { idx, stop in
                     HStack(alignment: .top, spacing: 12) {
@@ -217,14 +238,14 @@ struct SettingsSheetView: View {
                                 .font(.caption)
                         }
                         .buttonStyle(.borderless)
-                        .accessibilityLabel("删除\(stop.name)")
+                        .accessibilityLabel(L10n.settingsDeleteAccessibility(name: stop.name))
                     }
                     .padding(.vertical, 2)
                     .swipeActions(edge: .trailing, allowsFullSwipe: true) {
                         Button(role: .destructive) {
                             viewModel.removeStop(at: idx)
                         } label: {
-                            Label("删除", systemImage: "trash")
+                            Label(L10n.commonDelete, systemImage: "trash")
                         }
                     }
                 }
@@ -286,5 +307,22 @@ struct SettingsSheetView: View {
         case .error:
             return .red
         }
+    }
+
+    private func actionButtonLabel(title: String, systemImage: String) -> some View {
+        HStack(alignment: .center, spacing: 10) {
+            Image(systemName: systemImage)
+                .font(.body.weight(.semibold))
+                .frame(width: 18)
+
+            Text(title)
+                .font(.body.weight(.semibold))
+                .multilineTextAlignment(.leading)
+                .lineLimit(3)
+                .fixedSize(horizontal: false, vertical: true)
+
+            Spacer(minLength: 0)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
     }
 }

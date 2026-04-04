@@ -17,8 +17,9 @@ enum AppFormatters {
 
     private static let timestampFormatter: DateFormatter = {
         let formatter = DateFormatter()
-        formatter.locale = Locale(identifier: "zh_CN_POSIX")
-        formatter.dateFormat = "yyyy-MM-dd HH:mm"
+        formatter.locale = .autoupdatingCurrent
+        formatter.dateStyle = .medium
+        formatter.timeStyle = .short
         return formatter
     }()
 

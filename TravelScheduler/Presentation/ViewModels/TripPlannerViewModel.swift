@@ -46,7 +46,7 @@ final class TripPlannerViewModel {
     private let defaultSegmentMode: TravelMode = .driving
     private let placeSearchService: PlaceSearchServing
     private let routePlanningService: RoutePlanningServing
-    private let routeInvalidationStatus = "请重新生成路线。"
+    private let routeInvalidationStatus = L10n.routeInvalidationStatus
 
     private var segmentModesByLeg: [TripPlanDraft.RouteLeg: TravelMode] = [:]
     private var pendingSearchTask: Task<Void, Never>?
@@ -75,16 +75,16 @@ final class TripPlannerViewModel {
     }
 
     var travelSuggestion: String {
-        guard !routeSegments.isEmpty else { return "添加至少两个地点后可生成路线建议" }
+        guard !routeSegments.isEmpty else { return L10n.travelSuggestionNeedsRoute }
 
         let hours = totalTravelTime / 3600
         switch hours {
         case ..<2:
-            return "建议：这条路线适合半日轻量行程。"
+            return L10n.travelSuggestionHalfDay
         case 2..<6:
-            return "建议：这条路线适合一天内完成。"
+            return L10n.travelSuggestionFullDay
         default:
-            return "建议：这条路线较长，建议分两天或增加中途休息点。"
+            return L10n.travelSuggestionLong
         }
     }
 
@@ -114,46 +114,48 @@ final class TripPlannerViewModel {
     }
 
     var routeDetailsButtonTitle: String {
-        "查看分段路线（\(routeSegments.count)段）"
+        L10n.routeDetailsButtonTitle(segmentCount: routeSegments.count)
     }
 
     func makeRoutePlanMarkdownDocument(generatedAt: Date = .now) -> String {
         let draft = currentDraft
         var lines: [String] = []
 
-        lines.append("# 路线规划")
+        lines.append("# \(L10n.markdownTitle)")
         lines.append("")
-        lines.append("## 概览")
+        lines.append("## \(L10n.markdownOverviewSection)")
         lines.append("")
-        lines.append("- 生成时间：\(AppFormatters.timestamp(generatedAt))")
-        lines.append("- 起点：\(draft.normalizedStartStop?.name ?? "未设置")")
-        lines.append("- 终点：\(draft.normalizedEndStop?.name ?? "未设置")")
-        lines.append("- 是否环线：\(loopToStart ? "是" : "否")")
+        lines.append("- \(L10n.markdownGeneratedAt(AppFormatters.timestamp(generatedAt)))")
+        lines.append("- \(L10n.markdownStart(draft.normalizedStartStop?.name ?? "—"))")
+        lines.append("- \(L10n.markdownEnd(draft.normalizedEndStop?.name ?? "—"))")
+        lines.append("- \(L10n.markdownIsLoop(loopToStart ? L10n.commonYes : L10n.commonNo))")
 
         if let routeOrderDescription {
-            lines.append("- 路线顺序：\(routeOrderDescription)")
+            lines.append("- \(L10n.markdownRouteOrder(routeOrderDescription))")
         }
 
         if !routeSegments.isEmpty {
-            lines.append("- 总时长：\(AppFormatters.duration(totalTravelTime))")
+            lines.append("- \(L10n.markdownTotalDuration(AppFormatters.duration(totalTravelTime)))")
             if hasExternalTransitSegments {
-                lines.append("- 总路程：\(AppFormatters.distance(totalDistance))（不含需在 Apple 地图中查看的公共交通实际轨迹）")
+                lines.append(
+                    "- \(L10n.markdownTotalDistanceTransitNote(AppFormatters.distance(totalDistance)))"
+                )
             } else {
-                lines.append("- 总路程：\(AppFormatters.distance(totalDistance))")
+                lines.append("- \(L10n.markdownTotalDistance(AppFormatters.distance(totalDistance)))")
             }
         }
 
         if let routeStatus {
-            lines.append("- 当前状态：\(routeStatus.message)")
+            lines.append("- \(L10n.markdownCurrentStatus(routeStatus.message))")
         }
 
-        lines.append("- 行程建议：\(travelSuggestion)")
+        lines.append("- \(L10n.markdownTravelSuggestion(travelSuggestion))")
         lines.append("")
-        lines.append("## 地点列表")
+        lines.append("## \(L10n.markdownPlacesSection)")
         lines.append("")
 
         if plannedStops.isEmpty {
-            lines.append("- 暂无地点")
+            lines.append("- \(L10n.markdownNoPlaces)")
         } else {
             for (index, stop) in plannedStops.enumerated() {
                 let roleSuffix = stopRoleSuffix(for: stop, draft: draft)
@@ -161,24 +163,28 @@ final class TripPlannerViewModel {
 
                 let trimmedSubtitle = stop.subtitle.trimmingCharacters(in: .whitespacesAndNewlines)
                 if !trimmedSubtitle.isEmpty {
-                    lines.append("   - 地址：\(trimmedSubtitle)")
+                    lines.append("   - \(L10n.markdownAddress(trimmedSubtitle))")
                 }
             }
         }
 
         lines.append("")
-        lines.append("## 分段规划")
+        lines.append("## \(L10n.markdownSegmentsSection)")
         lines.append("")
 
         if routeSegments.isEmpty {
-            lines.append("- 暂无已生成路线。")
+            lines.append("- \(L10n.markdownNoRoute)")
         } else {
             for (index, segment) in routeSegments.enumerated() {
-                lines.append("### 第\(index + 1)段")
+                lines.append("### \(L10n.markdownSegmentTitle(index + 1))")
                 lines.append("")
-                lines.append("- 起止：\(segment.from.name) → \(segment.to.name)")
-                lines.append("- 通行方式：\(segmentModeDescription(for: segment))")
-                lines.append("- 通行时间：\(AppFormatters.duration(segment.expectedTravelTime))")
+                lines.append(
+                    "- \(L10n.markdownSegmentStartEnd(from: segment.from.name, to: segment.to.name))"
+                )
+                lines.append("- \(L10n.markdownSegmentMode(segmentModeDescription(for: segment)))")
+                lines.append(
+                    "- \(L10n.markdownSegmentDuration(AppFormatters.duration(segment.expectedTravelTime)))"
+                )
 
                 lines.append("")
             }
@@ -222,7 +228,7 @@ final class TripPlannerViewModel {
         let adjustmentMessage = normalizePlanState()
         invalidateRoute(
             message: composeRouteMessage(
-                baseMessage: "起点已更新。",
+                baseMessage: L10n.routeStartUpdated,
                 adjustmentMessage: adjustmentMessage
             )
         )
@@ -234,7 +240,7 @@ final class TripPlannerViewModel {
         let adjustmentMessage = normalizePlanState()
         invalidateRoute(
             message: composeRouteMessage(
-                baseMessage: "终点已更新。",
+                baseMessage: L10n.routeEndUpdated,
                 adjustmentMessage: adjustmentMessage
             )
         )
@@ -249,7 +255,7 @@ final class TripPlannerViewModel {
         }
 
         let adjustmentMessage = normalizePlanState()
-        let baseMessage = enabled ? "已切换为环线。" : "已取消环线，请确认终点。"
+        let baseMessage = enabled ? L10n.routeLoopEnabled : L10n.routeLoopDisabled
         invalidateRoute(
             message: composeRouteMessage(
                 baseMessage: baseMessage,
@@ -279,7 +285,7 @@ final class TripPlannerViewModel {
 
         invalidateRoute(
             message: composeRouteMessage(
-                baseMessage: "分段通行方式已更新。",
+                baseMessage: L10n.routeSegmentModeUpdated,
                 adjustmentMessage: nil
             )
         )
@@ -289,26 +295,26 @@ final class TripPlannerViewModel {
 
     func addStop(from item: MKMapItem) {
         let newStop = TripStop(
-            name: item.name ?? "未命名地点",
+            name: item.name ?? L10n.commonUnnamedPlace,
             subtitle: item.displayAddress,
             mapItem: item
         )
 
         let isDuplicate = plannedStops.contains { $0.isSemanticallyDuplicate(of: newStop) }
         guard !isDuplicate else {
-            searchStatus = StatusMessage(tone: .info, message: "该地点已在行程中。")
+            searchStatus = StatusMessage(tone: .info, message: L10n.searchDuplicatePlace)
             return
         }
 
         plannedStops.append(newStop)
         clearSearchState(
-            message: StatusMessage(tone: .success, message: "已添加：\(newStop.name)。")
+            message: StatusMessage(tone: .success, message: L10n.routeAdded(newStop.name))
         )
 
         let adjustmentMessage = normalizePlanState()
         invalidateRoute(
             message: composeRouteMessage(
-                baseMessage: "已添加：\(newStop.name)。",
+                baseMessage: L10n.routeAdded(newStop.name),
                 adjustmentMessage: adjustmentMessage
             )
         )
@@ -327,7 +333,7 @@ final class TripPlannerViewModel {
         let adjustmentMessage = normalizePlanState()
         invalidateRoute(
             message: composeRouteMessage(
-                baseMessage: "顺序已更新。",
+                baseMessage: L10n.routeOrderUpdated,
                 adjustmentMessage: adjustmentMessage
             )
         )
@@ -341,7 +347,7 @@ final class TripPlannerViewModel {
         let adjustmentMessage = normalizePlanState()
         invalidateRoute(
             message: composeRouteMessage(
-                baseMessage: "已删除：\(removedName)。",
+                baseMessage: L10n.routeDeleted(removedName),
                 adjustmentMessage: adjustmentMessage
             )
         )
@@ -354,7 +360,7 @@ final class TripPlannerViewModel {
         guard draft.canGenerateRoute else {
             routeStatus = StatusMessage(
                 tone: .info,
-                message: "至少需要两个地点才能生成路线。"
+                message: L10n.routeMinimumStops
             )
             return
         }
@@ -385,30 +391,30 @@ final class TripPlannerViewModel {
             if segments.isEmpty {
                 routeStatus = StatusMessage(
                     tone: .warning,
-                    message: "无法计算路线，请尝试更换地点或出行方式。"
+                    message: L10n.routeCannotCalculate
                 )
             } else if segments.contains(where: \.isTransitFallback) {
                 routeStatus = StatusMessage(
                     tone: .warning,
-                    message: "部分公共交通分段未找到可用公交方案，已改用步行或驾车。"
+                    message: L10n.routeTransitFallbackStatus
                 )
                 fitMapToPlannedContent()
             } else if segments.contains(where: \.isExternalTransit) {
                 routeStatus = StatusMessage(
                     tone: .info,
-                    message: "部分公共交通分段需在 Apple 地图中查看详细路线。"
+                    message: L10n.routeExternalTransitStatus
                 )
                 fitMapToPlannedContent()
             } else if segments.contains(where: \.hasWarnings) {
                 routeStatus = StatusMessage(
                     tone: .warning,
-                    message: "路线已更新，但部分分段使用了替代方式或直线估算。"
+                    message: L10n.routeUpdatedWithFallback
                 )
                 fitMapToPlannedContent()
             } else {
                 routeStatus = StatusMessage(
                     tone: .success,
-                    message: "路线已更新，共 \(segments.count) 段。"
+                    message: L10n.routeUpdatedSegments(segments.count)
                 )
                 fitMapToPlannedContent()
             }
@@ -424,7 +430,7 @@ final class TripPlannerViewModel {
             hiddenSegmentIDs.removeAll()
             routeStatus = StatusMessage(
                 tone: .error,
-                message: "路线计算失败：\(error.localizedDescription)"
+                message: L10n.routeGenerationFailed(error.localizedDescription)
             )
         }
     }
@@ -496,7 +502,7 @@ final class TripPlannerViewModel {
             searchStatus = items.isEmpty
                 ? StatusMessage(
                     tone: .info,
-                    message: "未找到相关地点，请尝试更具体的关键词。"
+                    message: L10n.searchNoResults
                 )
                 : nil
         } catch {
@@ -506,7 +512,7 @@ final class TripPlannerViewModel {
             searchResults = []
             searchStatus = StatusMessage(
                 tone: .error,
-                message: "搜索失败：\(error.localizedDescription)"
+                message: L10n.searchFailed(error.localizedDescription)
             )
         }
     }
@@ -530,34 +536,44 @@ final class TripPlannerViewModel {
         if startStopID != normalizedStartStopID {
             startStopID = normalizedStartStopID
             if let stopName = draft.normalizedStartStop?.name {
-                messages.append("起点已调整为\(stopName)")
+                messages.append(L10n.routeStartAdjusted(stopName))
             }
         }
 
         if endStopID != normalizedEndStopID {
             endStopID = normalizedEndStopID
             if let stopName = draft.normalizedEndStop?.name {
-                let prefix = loopToStart ? "终点已同步为" : "终点已调整为"
-                messages.append("\(prefix)\(stopName)")
+                messages.append(
+                    loopToStart
+                        ? L10n.routeEndSynced(stopName)
+                        : L10n.routeEndAdjusted(stopName)
+                )
             }
         }
 
         let validLegs = Set(draft.routeLegs)
         segmentModesByLeg = segmentModesByLeg.filter { validLegs.contains($0.key) }
 
-        return messages.isEmpty ? nil : messages.joined(separator: "，")
+        return messages.isEmpty
+            ? nil
+            : (ListFormatter.localizedString(byJoining: messages) ?? messages.joined(separator: ", "))
     }
 
     private func composeRouteMessage(
         baseMessage: String,
         adjustmentMessage: String?
     ) -> String {
-        var parts = [baseMessage]
+        let followup = currentDraft.canGenerateRoute ? routeInvalidationStatus : L10n.routeMinimumStops
+
         if let adjustmentMessage {
-            parts.append("\(adjustmentMessage)。")
+            return L10n.routeMessage(
+                base: baseMessage,
+                adjustment: adjustmentMessage,
+                followup: followup
+            )
         }
-        parts.append(currentDraft.canGenerateRoute ? routeInvalidationStatus : "至少需要两个地点才能生成路线。")
-        return parts.joined(separator: "")
+
+        return L10n.routeMessage(base: baseMessage, followup: followup)
     }
 
     private func stopRoleSuffix(for stop: TripStop, draft: TripPlanDraft) -> String {
@@ -565,15 +581,15 @@ final class TripPlannerViewModel {
         let isEnd = stop.id == draft.normalizedEndStopID
 
         if isStart && isEnd {
-            return "（起点 / 终点）"
+            return L10n.routeStopRoleStartEnd
         }
 
         if isStart {
-            return "（起点）"
+            return L10n.routeStopRoleStart
         }
 
         if isEnd {
-            return "（终点）"
+            return L10n.routeStopRoleEnd
         }
 
         return ""
@@ -581,10 +597,13 @@ final class TripPlannerViewModel {
 
     private func segmentModeDescription(for segment: RouteSegment) -> String {
         if segment.requestedTravelMode == segment.travelMode {
-            return segment.travelMode.rawValue
+            return segment.travelMode.localizedName
         }
 
-        return "\(segment.travelMode.rawValue)（原选择：\(segment.requestedTravelMode.rawValue)）"
+        return L10n.routeSegmentModeOriginalSelection(
+            actual: segment.travelMode.localizedName,
+            original: segment.requestedTravelMode.localizedName
+        )
     }
 
     private func invalidateRoute(message: String) {

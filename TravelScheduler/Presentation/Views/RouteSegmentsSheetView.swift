@@ -15,7 +15,13 @@ struct RouteSegmentsSheetView: View {
                                 .frame(width: 8, height: 40)
 
                             VStack(alignment: .leading, spacing: 4) {
-                                Text("第\(index + 1)段：\(segment.from.name) → \(segment.to.name)")
+                                Text(
+                                    L10n.routeSegmentHeader(
+                                        index: index + 1,
+                                        from: segment.from.name,
+                                        to: segment.to.name
+                                    )
+                                )
                                     .font(.subheadline)
 
                                 Text(segmentSummary(for: segment))
@@ -34,7 +40,7 @@ struct RouteSegmentsSheetView: View {
                     .accessibilityElement(children: .contain)
                 }
             }
-            .navigationTitle("分段路线")
+            .navigationTitle(L10n.routeSegmentsTitle)
             .navigationBarTitleDisplayMode(.inline)
         }
     }
@@ -54,7 +60,12 @@ struct RouteSegmentsSheetView: View {
         let isExpanded = expandedSegmentIDs.contains(segment.id)
 
         VStack(alignment: .leading, spacing: 8) {
-            Label("预计时长：\(AppFormatters.duration(segment.expectedTravelTime))", systemImage: "clock")
+            Label(
+                L10n.routeSegmentEstimatedDuration(
+                    AppFormatters.duration(segment.expectedTravelTime)
+                ),
+                systemImage: "clock"
+            )
                 .font(.caption)
                 .foregroundStyle(.secondary)
 
@@ -63,7 +74,7 @@ struct RouteSegmentsSheetView: View {
                     toggleExpandedDetails(for: segment.id)
                 } label: {
                     Label(
-                        isExpanded ? "收起详细路线" : "显示详细路线",
+                        isExpanded ? L10n.routeSegmentHideDetails : L10n.routeSegmentShowDetails,
                         systemImage: isExpanded ? "chevron.up" : "chevron.down"
                     )
                     .font(.caption.weight(.semibold))
@@ -78,7 +89,7 @@ struct RouteSegmentsSheetView: View {
             }
 
             if isExpanded && normalDetails.isEmpty {
-                Text("暂无更详细步骤信息")
+                Text(L10n.routeSegmentNoDetails)
                     .font(.caption)
                     .foregroundStyle(.secondary)
             } else if isExpanded {
@@ -105,22 +116,28 @@ struct RouteSegmentsSheetView: View {
 
     private func externalTransitDetailView(_ transitReference: TransitRouteReference) -> some View {
         VStack(alignment: .leading, spacing: 8) {
-            Label("\(transitReference.provider.displayName) 承接详细路线", systemImage: "tram.fill")
+            Label(
+                L10n.routeSegmentProviderHandlesDetails(transitReference.provider.displayName),
+                systemImage: "tram.fill"
+            )
                 .font(.caption)
                 .foregroundStyle(.secondary)
 
             if let estimatedTravelTime = transitReference.estimatedTravelTime {
-                Label("预计时长：\(AppFormatters.duration(estimatedTravelTime))", systemImage: "clock")
+                Label(
+                    L10n.routeSegmentEstimatedDuration(AppFormatters.duration(estimatedTravelTime)),
+                    systemImage: "clock"
+                )
                     .font(.caption)
                     .foregroundStyle(.secondary)
             }
 
-            Text("偏好：\(transitReference.preferredModesDescription)")
+            Text(L10n.routeSegmentPreferences(transitReference.preferredModesDescription))
                 .font(.caption)
                 .foregroundStyle(.secondary)
 
             Link(destination: transitReference.launchURL) {
-                Label("在 Apple 地图中查看", systemImage: "arrow.up.right.square")
+                Label(L10n.routeSegmentOpenInAppleMaps, systemImage: "arrow.up.right.square")
                     .font(.caption.weight(.semibold))
             }
         }
@@ -129,12 +146,19 @@ struct RouteSegmentsSheetView: View {
     private func segmentSummary(for segment: RouteSegment) -> String {
         if let transitReference = segment.transitRouteReference {
             if let estimatedTravelTime = transitReference.estimatedTravelTime {
-                return "\(segment.travelMode.rawValue) · \(AppFormatters.duration(estimatedTravelTime))"
+                return L10n.routeSegmentSummary(
+                    mode: segment.travelMode.localizedName,
+                    duration: AppFormatters.duration(estimatedTravelTime)
+                )
             }
-            return "\(segment.travelMode.rawValue) · 详情见 Apple 地图"
+            return L10n.routeSegmentDetailsInAppleMaps(mode: segment.travelMode.localizedName)
         }
 
-        return "\(segment.travelMode.rawValue) · \(AppFormatters.distance(segment.distance)) · \(AppFormatters.duration(segment.expectedTravelTime))"
+        return L10n.routeSegmentSummary(
+            mode: segment.travelMode.localizedName,
+            distance: AppFormatters.distance(segment.distance),
+            duration: AppFormatters.duration(segment.expectedTravelTime)
+        )
     }
 
     private func warningDetails(for segment: RouteSegment) -> [RouteSegment.Detail]? {
