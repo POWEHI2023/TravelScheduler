@@ -43,6 +43,5 @@ struct TransitRouteReference: Hashable {
 
     var preferredModesDescription: String {
         ListFormatter.localizedString(byJoining: preferredModes.map(\.displayName))
-            ?? preferredModes.map(\.displayName).joined(separator: ", ")
     }
 }

@@ -30,8 +30,8 @@ struct RouteSegmentsSheetView: View {
                             }
                         }
 
-                        if let warningDetails = warningDetails(for: segment), !warningDetails.isEmpty {
-                            warningDetailView(warningDetails)
+                        if !segment.warningDetails.isEmpty {
+                            warningDetailView(segment.warningDetails)
                         }
 
                         segmentDetailView(for: segment)
@@ -56,7 +56,7 @@ struct RouteSegmentsSheetView: View {
 
     @ViewBuilder
     private func inAppRouteDetailView(for segment: RouteSegment) -> some View {
-        let normalDetails = segment.details.filter { $0.kind == .step }
+        let stepDetails = segment.stepDetails
         let isExpanded = expandedSegmentIDs.contains(segment.id)
 
         VStack(alignment: .leading, spacing: 8) {
@@ -69,7 +69,7 @@ struct RouteSegmentsSheetView: View {
                 .font(.caption)
                 .foregroundStyle(.secondary)
 
-            if !normalDetails.isEmpty {
+            if !stepDetails.isEmpty {
                 Button {
                     toggleExpandedDetails(for: segment.id)
                 } label: {
@@ -88,12 +88,12 @@ struct RouteSegmentsSheetView: View {
                     .foregroundStyle(.secondary)
             }
 
-            if isExpanded && normalDetails.isEmpty {
+            if isExpanded && stepDetails.isEmpty {
                 Text(L10n.routeSegmentNoDetails)
                     .font(.caption)
                     .foregroundStyle(.secondary)
             } else if isExpanded {
-                ForEach(normalDetails) { detail in
+                ForEach(stepDetails) { detail in
                     VStack(alignment: .leading, spacing: 3) {
                         Text("\(detail.transportDescription) · \(AppFormatters.distance(detail.distance))")
                             .font(.caption2)
@@ -161,11 +161,6 @@ struct RouteSegmentsSheetView: View {
         )
     }
 
-    private func warningDetails(for segment: RouteSegment) -> [RouteSegment.Detail]? {
-        let items = segment.details.filter { $0.kind == .warning }
-        return items.isEmpty ? nil : items
-    }
-
     private func warningDetailView(_ details: [RouteSegment.Detail]) -> some View {
         VStack(alignment: .leading, spacing: 4) {
             ForEach(details) { detail in
@@ -177,10 +172,6 @@ struct RouteSegmentsSheetView: View {
     }
 
     private func toggleExpandedDetails(for segmentID: UUID) {
-        if expandedSegmentIDs.contains(segmentID) {
-            expandedSegmentIDs.remove(segmentID)
-        } else {
-            expandedSegmentIDs.insert(segmentID)
-        }
+        expandedSegmentIDs.formSymmetricDifference([segmentID])
     }
 }

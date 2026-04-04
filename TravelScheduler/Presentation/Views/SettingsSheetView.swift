@@ -293,20 +293,7 @@ struct SettingsSheetView: View {
     private func statusView(_ status: TripPlannerViewModel.StatusMessage) -> some View {
         Text(status.message)
             .font(.footnote)
-            .foregroundStyle(statusColor(for: status.tone))
-    }
-
-    private func statusColor(for tone: TripPlannerViewModel.StatusMessage.Tone) -> Color {
-        switch tone {
-        case .info:
-            return .secondary
-        case .success:
-            return .green
-        case .warning:
-            return .orange
-        case .error:
-            return .red
-        }
+            .foregroundStyle(status.tone.color)
     }
 
     private func actionButtonLabel(title: String, systemImage: String) -> some View {

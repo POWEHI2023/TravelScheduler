@@ -9,9 +9,17 @@ enum AppFormatters {
         return formatter
     }()
 
-    private static let durationFormatter: DateComponentsFormatter = {
+    private static let shortDurationFormatter: DateComponentsFormatter = {
         let formatter = DateComponentsFormatter()
         formatter.unitsStyle = .abbreviated
+        formatter.allowedUnits = [.minute]
+        return formatter
+    }()
+
+    private static let longDurationFormatter: DateComponentsFormatter = {
+        let formatter = DateComponentsFormatter()
+        formatter.unitsStyle = .abbreviated
+        formatter.allowedUnits = [.hour, .minute]
         return formatter
     }()
 
@@ -29,8 +37,8 @@ enum AppFormatters {
     }
 
     static func duration(_ duration: TimeInterval) -> String {
-        durationFormatter.allowedUnits = duration >= 3600 ? [.hour, .minute] : [.minute]
-        return durationFormatter.string(from: duration) ?? "--"
+        let formatter = duration >= 3600 ? longDurationFormatter : shortDurationFormatter
+        return formatter.string(from: duration) ?? "--"
     }
 
     static func timestamp(_ date: Date) -> String {

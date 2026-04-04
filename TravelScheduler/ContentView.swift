@@ -102,7 +102,7 @@ struct ContentView: View {
                 if let routeStatus = viewModel.routeStatus {
                     Text(routeStatus.message)
                         .font(.footnote)
-                        .foregroundStyle(statusColor(for: routeStatus.tone))
+                        .foregroundStyle(routeStatus.tone.color)
                         .padding(.horizontal, 12)
                         .padding(.vertical, 8)
                         .background(.ultraThinMaterial, in: Capsule())
@@ -111,19 +111,6 @@ struct ContentView: View {
             .padding(.bottom, 12)
         }
         .padding(.horizontal, 12)
-    }
-
-    private func statusColor(for tone: TripPlannerViewModel.StatusMessage.Tone) -> Color {
-        switch tone {
-        case .info:
-            return .secondary
-        case .success:
-            return .green
-        case .warning:
-            return .orange
-        case .error:
-            return .red
-        }
     }
 
     private func strokeStyle(for segment: RouteSegment) -> StrokeStyle {

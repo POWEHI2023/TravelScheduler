@@ -15,7 +15,7 @@ struct RoutePlanDocumentSheetView: View {
             case spacer
         }
 
-        let id = UUID()
+        let id: Int
         let style: Style
         let text: String
     }
@@ -32,7 +32,10 @@ struct RoutePlanDocumentSheetView: View {
     private var markdownLines: [MarkdownLine] {
         markdown
             .components(separatedBy: .newlines)
-            .map(parseMarkdownLine)
+            .enumerated()
+            .map { index, line in
+                parseMarkdownLine(line, id: index)
+            }
     }
 
     var body: some View {
@@ -148,26 +151,27 @@ struct RoutePlanDocumentSheetView: View {
         }
     }
 
-    private func parseMarkdownLine(_ rawLine: String) -> MarkdownLine {
+    private func parseMarkdownLine(_ rawLine: String, id: Int) -> MarkdownLine {
         let trimmed = rawLine.trimmingCharacters(in: .whitespaces)
         guard !trimmed.isEmpty else {
-            return MarkdownLine(style: .spacer, text: "")
+            return MarkdownLine(id: id, style: .spacer, text: "")
         }
 
         if trimmed.hasPrefix("# ") {
-            return MarkdownLine(style: .title, text: String(trimmed.dropFirst(2)))
+            return MarkdownLine(id: id, style: .title, text: String(trimmed.dropFirst(2)))
         }
 
         if trimmed.hasPrefix("## ") {
-            return MarkdownLine(style: .section, text: String(trimmed.dropFirst(3)))
+            return MarkdownLine(id: id, style: .section, text: String(trimmed.dropFirst(3)))
         }
 
         if trimmed.hasPrefix("### ") {
-            return MarkdownLine(style: .subsection, text: String(trimmed.dropFirst(4)))
+            return MarkdownLine(id: id, style: .subsection, text: String(trimmed.dropFirst(4)))
         }
 
         if rawLine.hasBulletPrefix {
             return MarkdownLine(
+                id: id,
                 style: .bullet(indentLevel: rawLine.markdownIndentLevel),
                 text: String(trimmed.dropFirst(2))
             )
@@ -176,10 +180,10 @@ struct RoutePlanDocumentSheetView: View {
         if let numberedMarker = trimmed.markdownNumberedMarker {
             let textStartIndex = trimmed.index(trimmed.startIndex, offsetBy: numberedMarker.count + 1)
             let text = String(trimmed[textStartIndex...]).trimmingCharacters(in: .whitespaces)
-            return MarkdownLine(style: .numbered(marker: numberedMarker), text: text)
+            return MarkdownLine(id: id, style: .numbered(marker: numberedMarker), text: text)
         }
 
-        return MarkdownLine(style: .paragraph, text: trimmed)
+        return MarkdownLine(id: id, style: .paragraph, text: trimmed)
     }
 }
 

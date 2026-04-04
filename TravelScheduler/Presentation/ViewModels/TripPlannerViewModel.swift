@@ -46,7 +46,6 @@ final class TripPlannerViewModel {
     private let defaultSegmentMode: TravelMode = .driving
     private let placeSearchService: PlaceSearchServing
     private let routePlanningService: RoutePlanningServing
-    private let routeInvalidationStatus = L10n.routeInvalidationStatus
 
     private var segmentModesByLeg: [TripPlanDraft.RouteLeg: TravelMode] = [:]
     private var pendingSearchTask: Task<Void, Never>?
@@ -118,79 +117,15 @@ final class TripPlannerViewModel {
     }
 
     func makeRoutePlanMarkdownDocument(generatedAt: Date = .now) -> String {
-        let draft = currentDraft
-        var lines: [String] = []
-
-        lines.append("# \(L10n.markdownTitle)")
-        lines.append("")
-        lines.append("## \(L10n.markdownOverviewSection)")
-        lines.append("")
-        lines.append("- \(L10n.markdownGeneratedAt(AppFormatters.timestamp(generatedAt)))")
-        lines.append("- \(L10n.markdownStart(draft.normalizedStartStop?.name ?? "—"))")
-        lines.append("- \(L10n.markdownEnd(draft.normalizedEndStop?.name ?? "—"))")
-        lines.append("- \(L10n.markdownIsLoop(loopToStart ? L10n.commonYes : L10n.commonNo))")
-
-        if let routeOrderDescription {
-            lines.append("- \(L10n.markdownRouteOrder(routeOrderDescription))")
-        }
-
-        if !routeSegments.isEmpty {
-            lines.append("- \(L10n.markdownTotalDuration(AppFormatters.duration(totalTravelTime)))")
-            if hasExternalTransitSegments {
-                lines.append(
-                    "- \(L10n.markdownTotalDistanceTransitNote(AppFormatters.distance(totalDistance)))"
-                )
-            } else {
-                lines.append("- \(L10n.markdownTotalDistance(AppFormatters.distance(totalDistance)))")
-            }
-        }
-
-        if let routeStatus {
-            lines.append("- \(L10n.markdownCurrentStatus(routeStatus.message))")
-        }
-
-        lines.append("- \(L10n.markdownTravelSuggestion(travelSuggestion))")
-        lines.append("")
-        lines.append("## \(L10n.markdownPlacesSection)")
-        lines.append("")
-
-        if plannedStops.isEmpty {
-            lines.append("- \(L10n.markdownNoPlaces)")
-        } else {
-            for (index, stop) in plannedStops.enumerated() {
-                let roleSuffix = stopRoleSuffix(for: stop, draft: draft)
-                lines.append("\(index + 1). \(stop.name)\(roleSuffix)")
-
-                let trimmedSubtitle = stop.subtitle.trimmingCharacters(in: .whitespacesAndNewlines)
-                if !trimmedSubtitle.isEmpty {
-                    lines.append("   - \(L10n.markdownAddress(trimmedSubtitle))")
-                }
-            }
-        }
-
-        lines.append("")
-        lines.append("## \(L10n.markdownSegmentsSection)")
-        lines.append("")
-
-        if routeSegments.isEmpty {
-            lines.append("- \(L10n.markdownNoRoute)")
-        } else {
-            for (index, segment) in routeSegments.enumerated() {
-                lines.append("### \(L10n.markdownSegmentTitle(index + 1))")
-                lines.append("")
-                lines.append(
-                    "- \(L10n.markdownSegmentStartEnd(from: segment.from.name, to: segment.to.name))"
-                )
-                lines.append("- \(L10n.markdownSegmentMode(segmentModeDescription(for: segment)))")
-                lines.append(
-                    "- \(L10n.markdownSegmentDuration(AppFormatters.duration(segment.expectedTravelTime)))"
-                )
-
-                lines.append("")
-            }
-        }
-
-        return lines.joined(separator: "\n")
+        RoutePlanDocumentBuilder.makeMarkdown(
+            context: .init(
+                draft: currentDraft,
+                routeSegments: routeSegments,
+                routeStatusMessage: routeStatus?.message,
+                travelSuggestion: travelSuggestion
+            ),
+            generatedAt: generatedAt
+        )
     }
 
     private var currentDraft: TripPlanDraft {
@@ -225,25 +160,13 @@ final class TripPlannerViewModel {
             endStopID = newStartID
         }
 
-        let adjustmentMessage = normalizePlanState()
-        invalidateRoute(
-            message: composeRouteMessage(
-                baseMessage: L10n.routeStartUpdated,
-                adjustmentMessage: adjustmentMessage
-            )
-        )
+        invalidateRouteAfterPlanChange(baseMessage: L10n.routeStartUpdated)
     }
 
     func updateEndStopID(_ newEndID: UUID?) {
         endStopID = newEndID
 
-        let adjustmentMessage = normalizePlanState()
-        invalidateRoute(
-            message: composeRouteMessage(
-                baseMessage: L10n.routeEndUpdated,
-                adjustmentMessage: adjustmentMessage
-            )
-        )
+        invalidateRouteAfterPlanChange(baseMessage: L10n.routeEndUpdated)
     }
 
     func updateLoopToStart(_ enabled: Bool) {
@@ -254,22 +177,12 @@ final class TripPlannerViewModel {
             endStopID = preferredEndStopIDAfterDisablingLoop()
         }
 
-        let adjustmentMessage = normalizePlanState()
         let baseMessage = enabled ? L10n.routeLoopEnabled : L10n.routeLoopDisabled
-        invalidateRoute(
-            message: composeRouteMessage(
-                baseMessage: baseMessage,
-                adjustmentMessage: adjustmentMessage
-            )
-        )
+        invalidateRouteAfterPlanChange(baseMessage: baseMessage)
     }
 
     func toggleSegmentVisibility(_ segmentID: UUID) {
-        if hiddenSegmentIDs.contains(segmentID) {
-            hiddenSegmentIDs.remove(segmentID)
-        } else {
-            hiddenSegmentIDs.insert(segmentID)
-        }
+        hiddenSegmentIDs.formSymmetricDifference([segmentID])
     }
 
     func modeForLeg(_ leg: TripPlanDraft.RouteLeg) -> TravelMode {
@@ -283,11 +196,9 @@ final class TripPlannerViewModel {
             segmentModesByLeg[leg] = mode
         }
 
-        invalidateRoute(
-            message: composeRouteMessage(
-                baseMessage: L10n.routeSegmentModeUpdated,
-                adjustmentMessage: nil
-            )
+        invalidateRouteAfterPlanChange(
+            baseMessage: L10n.routeSegmentModeUpdated,
+            shouldNormalizePlanState: false
         )
     }
 
@@ -311,13 +222,7 @@ final class TripPlannerViewModel {
             message: StatusMessage(tone: .success, message: L10n.routeAdded(newStop.name))
         )
 
-        let adjustmentMessage = normalizePlanState()
-        invalidateRoute(
-            message: composeRouteMessage(
-                baseMessage: L10n.routeAdded(newStop.name),
-                adjustmentMessage: adjustmentMessage
-            )
-        )
+        invalidateRouteAfterPlanChange(baseMessage: L10n.routeAdded(newStop.name))
 
         cameraPosition = .region(
             MKCoordinateRegion(
@@ -330,13 +235,7 @@ final class TripPlannerViewModel {
     func moveStops(from source: IndexSet, to destination: Int) {
         plannedStops.move(fromOffsets: source, toOffset: destination)
 
-        let adjustmentMessage = normalizePlanState()
-        invalidateRoute(
-            message: composeRouteMessage(
-                baseMessage: L10n.routeOrderUpdated,
-                adjustmentMessage: adjustmentMessage
-            )
-        )
+        invalidateRouteAfterPlanChange(baseMessage: L10n.routeOrderUpdated)
     }
 
     func removeStop(at index: Int) {
@@ -344,13 +243,7 @@ final class TripPlannerViewModel {
         let removedName = plannedStops[index].name
         plannedStops.remove(at: index)
 
-        let adjustmentMessage = normalizePlanState()
-        invalidateRoute(
-            message: composeRouteMessage(
-                baseMessage: L10n.routeDeleted(removedName),
-                adjustmentMessage: adjustmentMessage
-            )
-        )
+        invalidateRouteAfterPlanChange(baseMessage: L10n.routeDeleted(removedName))
     }
 
     // MARK: - Route Planning
@@ -383,51 +276,16 @@ final class TripPlannerViewModel {
             let segments = try await task.value
             guard activeRouteRequestID == requestID else { return }
 
-            pendingRouteTask = nil
-            isPlanningRoute = false
-            routeSegments = segments
-            hiddenSegmentIDs.removeAll()
-
-            if segments.isEmpty {
-                routeStatus = StatusMessage(
-                    tone: .warning,
-                    message: L10n.routeCannotCalculate
-                )
-            } else if segments.contains(where: \.isTransitFallback) {
-                routeStatus = StatusMessage(
-                    tone: .warning,
-                    message: L10n.routeTransitFallbackStatus
-                )
-                fitMapToPlannedContent()
-            } else if segments.contains(where: \.isExternalTransit) {
-                routeStatus = StatusMessage(
-                    tone: .info,
-                    message: L10n.routeExternalTransitStatus
-                )
-                fitMapToPlannedContent()
-            } else if segments.contains(where: \.hasWarnings) {
-                routeStatus = StatusMessage(
-                    tone: .warning,
-                    message: L10n.routeUpdatedWithFallback
-                )
-                fitMapToPlannedContent()
-            } else {
-                routeStatus = StatusMessage(
-                    tone: .success,
-                    message: L10n.routeUpdatedSegments(segments.count)
-                )
-                fitMapToPlannedContent()
-            }
+            completeRoutePlanning()
+            applyGeneratedRoute(segments)
         } catch {
             guard activeRouteRequestID == requestID else { return }
 
-            pendingRouteTask = nil
-            isPlanningRoute = false
+            completeRoutePlanning()
 
             guard !(error is CancellationError) else { return }
 
-            routeSegments = []
-            hiddenSegmentIDs.removeAll()
+            clearGeneratedRoute()
             routeStatus = StatusMessage(
                 tone: .error,
                 message: L10n.routeGenerationFailed(error.localizedDescription)
@@ -472,6 +330,9 @@ final class TripPlannerViewModel {
         }
 
         activeSearchKeyword = keyword
+        searchResults = []
+        searchStatus = nil
+        isSearching = false
         pendingSearchTask = Task { [weak self] in
             do {
                 try await Task.sleep(nanoseconds: 350_000_000)
@@ -563,7 +424,9 @@ final class TripPlannerViewModel {
         baseMessage: String,
         adjustmentMessage: String?
     ) -> String {
-        let followup = currentDraft.canGenerateRoute ? routeInvalidationStatus : L10n.routeMinimumStops
+        let followup = currentDraft.canGenerateRoute
+            ? L10n.routeInvalidationStatus
+            : L10n.routeMinimumStops
 
         if let adjustmentMessage {
             return L10n.routeMessage(
@@ -576,40 +439,72 @@ final class TripPlannerViewModel {
         return L10n.routeMessage(base: baseMessage, followup: followup)
     }
 
-    private func stopRoleSuffix(for stop: TripStop, draft: TripPlanDraft) -> String {
-        let isStart = stop.id == draft.normalizedStartStopID
-        let isEnd = stop.id == draft.normalizedEndStopID
-
-        if isStart && isEnd {
-            return L10n.routeStopRoleStartEnd
-        }
-
-        if isStart {
-            return L10n.routeStopRoleStart
-        }
-
-        if isEnd {
-            return L10n.routeStopRoleEnd
-        }
-
-        return ""
+    private func invalidateRouteAfterPlanChange(
+        baseMessage: String,
+        shouldNormalizePlanState: Bool = true
+    ) {
+        let adjustmentMessage = shouldNormalizePlanState ? normalizePlanState() : nil
+        invalidateRoute(
+            message: composeRouteMessage(
+                baseMessage: baseMessage,
+                adjustmentMessage: adjustmentMessage
+            )
+        )
     }
 
-    private func segmentModeDescription(for segment: RouteSegment) -> String {
-        if segment.requestedTravelMode == segment.travelMode {
-            return segment.travelMode.localizedName
+    private func applyGeneratedRoute(_ segments: [RouteSegment]) {
+        routeSegments = segments
+        hiddenSegmentIDs.removeAll()
+        routeStatus = statusMessage(for: segments)
+
+        if !segments.isEmpty {
+            fitMapToPlannedContent()
+        }
+    }
+
+    private func statusMessage(for segments: [RouteSegment]) -> StatusMessage {
+        if segments.isEmpty {
+            return StatusMessage(
+                tone: .warning,
+                message: L10n.routeCannotCalculate
+            )
         }
 
-        return L10n.routeSegmentModeOriginalSelection(
-            actual: segment.travelMode.localizedName,
-            original: segment.requestedTravelMode.localizedName
+        if segments.contains(where: \.isTransitFallback) {
+            return StatusMessage(
+                tone: .warning,
+                message: L10n.routeTransitFallbackStatus
+            )
+        }
+
+        if segments.contains(where: \.isExternalTransit) {
+            return StatusMessage(
+                tone: .info,
+                message: L10n.routeExternalTransitStatus
+            )
+        }
+
+        if segments.contains(where: \.hasWarnings) {
+            return StatusMessage(
+                tone: .warning,
+                message: L10n.routeUpdatedWithFallback
+            )
+        }
+
+        return StatusMessage(
+            tone: .success,
+            message: L10n.routeUpdatedSegments(segments.count)
         )
+    }
+
+    private func clearGeneratedRoute() {
+        routeSegments = []
+        hiddenSegmentIDs.removeAll()
     }
 
     private func invalidateRoute(message: String) {
         cancelPendingRouteGeneration()
-        routeSegments = []
-        hiddenSegmentIDs.removeAll()
+        clearGeneratedRoute()
         routeStatus = StatusMessage(tone: .info, message: message)
     }
 
@@ -625,6 +520,10 @@ final class TripPlannerViewModel {
     private func cancelPendingRouteGeneration() {
         activeRouteRequestID = UUID()
         pendingRouteTask?.cancel()
+        completeRoutePlanning()
+    }
+
+    private func completeRoutePlanning() {
         pendingRouteTask = nil
         isPlanningRoute = false
     }

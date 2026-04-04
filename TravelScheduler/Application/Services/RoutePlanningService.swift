@@ -25,11 +25,13 @@ final class MapKitRoutePlanningService: RoutePlanningServing {
 
     private struct CachedSegmentEntry {
         let segment: RouteSegment
-        let createdAt: Date
+        let expiresAt: Date
         var lastAccessedAt: Date
     }
 
-    private let cacheTTL: TimeInterval = 15 * 60
+    private let stableSegmentCacheTTL: TimeInterval = 15 * 60
+    private let dynamicSegmentCacheTTL: TimeInterval = 5 * 60
+    private let degradedSegmentCacheTTL: TimeInterval = 3 * 60
     private let maxCachedSegments = 120
     private let cacheLock = NSLock()
     private var cachedSegments: [SegmentRequestKey: CachedSegmentEntry] = [:]
@@ -64,16 +66,7 @@ final class MapKitRoutePlanningService: RoutePlanningServing {
                 preferredMode: mode
             )
 
-            if !computedSegment.hasWarnings {
-                withCacheLock {
-                    cachedSegments[cacheKey] = CachedSegmentEntry(
-                        segment: computedSegment,
-                        createdAt: now,
-                        lastAccessedAt: now
-                    )
-                }
-                evictLeastRecentlyUsedEntriesIfNeeded()
-            }
+            cacheSegment(computedSegment, for: cacheKey)
 
             segments.append(computedSegment)
         }
@@ -326,8 +319,6 @@ final class MapKitRoutePlanningService: RoutePlanningServing {
         to destinationStop: TripStop,
         expectedTravelTime: TimeInterval
     ) -> RouteSegment {
-        let coordinates = [sourceStop.coordinate, destinationStop.coordinate]
-        let polyline = MKPolyline(coordinates: coordinates, count: coordinates.count)
         let transitReference = TransitRouteReference(
             launchURL: appleMapsTransitURL(from: sourceStop, to: destinationStop),
             preferredModes: TransitRouteReference.defaultPreferredModes,
@@ -341,7 +332,7 @@ final class MapKitRoutePlanningService: RoutePlanningServing {
             travelMode: .transit,
             distance: 0,
             expectedTravelTime: expectedTravelTime,
-            polyline: polyline,
+            polyline: directPolyline(from: sourceStop, to: destinationStop),
             routeName: L10n.routeServiceAppleMapsTransitRouteName,
             details: [],
             representation: .externalTransit(transitReference),
@@ -354,9 +345,6 @@ final class MapKitRoutePlanningService: RoutePlanningServing {
         to destinationStop: TripStop,
         requestedTravelMode: TravelMode
     ) -> RouteSegment {
-        let coordinates = [sourceStop.coordinate, destinationStop.coordinate]
-        let polyline = MKPolyline(coordinates: coordinates, count: coordinates.count)
-
         return RouteSegment(
             from: sourceStop,
             to: destinationStop,
@@ -364,7 +352,7 @@ final class MapKitRoutePlanningService: RoutePlanningServing {
             travelMode: requestedTravelMode,
             distance: 0,
             expectedTravelTime: 0,
-            polyline: polyline,
+            polyline: directPolyline(from: sourceStop, to: destinationStop),
             details: [makeWarningDetail(L10n.routeServiceSameCoordinate)],
             representation: .inAppRoute,
             mapRenderStyle: requestedTravelMode == .transit ? .connector : .solid
@@ -379,18 +367,7 @@ final class MapKitRoutePlanningService: RoutePlanningServing {
         warning: String,
         mapRenderStyle: RouteSegment.MapRenderStyle = .solid
     ) -> RouteSegment {
-        let coordinates = [sourceStop.coordinate, destinationStop.coordinate]
-        let polyline = MKPolyline(coordinates: coordinates, count: coordinates.count)
-        let distance = CLLocation(
-            latitude: sourceStop.coordinate.latitude,
-            longitude: sourceStop.coordinate.longitude
-        )
-        .distance(
-            from: CLLocation(
-                latitude: destinationStop.coordinate.latitude,
-                longitude: destinationStop.coordinate.longitude
-            )
-        )
+        let distance = directDistance(from: sourceStop, to: destinationStop)
         let estimatedTime = distance / estimatedSpeed(for: mode)
 
         return RouteSegment(
@@ -400,7 +377,7 @@ final class MapKitRoutePlanningService: RoutePlanningServing {
             travelMode: mode,
             distance: distance,
             expectedTravelTime: estimatedTime,
-            polyline: polyline,
+            polyline: directPolyline(from: sourceStop, to: destinationStop),
             details: [makeWarningDetail(warning)],
             representation: .inAppRoute,
             mapRenderStyle: mapRenderStyle
@@ -411,12 +388,13 @@ final class MapKitRoutePlanningService: RoutePlanningServing {
         from sourceStop: TripStop,
         to destinationStop: TripStop
     ) async throws -> TimeInterval? {
-        let request = MKDirections.Request()
-        request.source = sourceStop.mapItem
-        request.destination = destinationStop.mapItem
-        request.transportType = .transit
-
-        let directions = MKDirections(request: request)
+        let directions = MKDirections(
+            request: makeDirectionsRequest(
+                from: sourceStop,
+                to: destinationStop,
+                transportType: .transit
+            )
+        )
 
         return try await withTaskCancellationHandler {
             try await withCheckedThrowingContinuation { continuation in
@@ -439,14 +417,41 @@ final class MapKitRoutePlanningService: RoutePlanningServing {
         to destinationStop: TripStop,
         transportType: MKDirectionsTransportType
     ) async throws -> MKRoute? {
+        let directions = MKDirections(
+            request: makeDirectionsRequest(
+                from: sourceStop,
+                to: destinationStop,
+                transportType: transportType
+            )
+        )
+
+        return try await withTaskCancellationHandler {
+            try await withCheckedThrowingContinuation { continuation in
+                directions.calculate { response, error in
+                    if let error {
+                        continuation.resume(throwing: error)
+                        return
+                    }
+
+                    continuation.resume(returning: response?.routes.first)
+                }
+            }
+        } onCancel: {
+            directions.cancel()
+        }
+    }
+
+    private func makeDirectionsRequest(
+        from sourceStop: TripStop,
+        to destinationStop: TripStop,
+        transportType: MKDirectionsTransportType
+    ) -> MKDirections.Request {
         let request = MKDirections.Request()
         request.source = sourceStop.mapItem
         request.destination = destinationStop.mapItem
         request.transportType = transportType
         request.requestsAlternateRoutes = false
-
-        let response = try await MKDirections(request: request).calculate()
-        return response.routes.first
+        return request
     }
 
     private func transportType(for mode: TravelMode) -> MKDirectionsTransportType {
@@ -458,6 +463,24 @@ final class MapKitRoutePlanningService: RoutePlanningServing {
         case .transit:
             return .transit
         }
+    }
+
+    private func directPolyline(from sourceStop: TripStop, to destinationStop: TripStop) -> MKPolyline {
+        let coordinates = [sourceStop.coordinate, destinationStop.coordinate]
+        return MKPolyline(coordinates: coordinates, count: coordinates.count)
+    }
+
+    private func directDistance(from sourceStop: TripStop, to destinationStop: TripStop) -> CLLocationDistance {
+        CLLocation(
+            latitude: sourceStop.coordinate.latitude,
+            longitude: sourceStop.coordinate.longitude
+        )
+        .distance(
+            from: CLLocation(
+                latitude: destinationStop.coordinate.latitude,
+                longitude: destinationStop.coordinate.longitude
+            )
+        )
     }
 
     private func appleMapsTransitURL(from sourceStop: TripStop, to destinationStop: TripStop) -> URL {
@@ -475,11 +498,12 @@ final class MapKitRoutePlanningService: RoutePlanningServing {
             )
         ]
 
-        guard let url = components.url else {
-            preconditionFailure("Failed to build Apple Maps transit URL")
+        if let url = components.url {
+            return url
         }
 
-        return url
+        assertionFailure("Failed to build Apple Maps transit URL")
+        return URL(string: "https://maps.apple.com") ?? URL(fileURLWithPath: "/")
     }
 
     private func estimatedSpeed(for mode: TravelMode) -> CLLocationSpeed {
@@ -558,7 +582,7 @@ final class MapKitRoutePlanningService: RoutePlanningServing {
     ) -> RouteSegment? {
         withCacheLock {
             guard var cachedEntry = cachedSegments[key] else { return nil }
-            guard now.timeIntervalSince(cachedEntry.createdAt) <= cacheTTL else {
+            guard cachedEntry.expiresAt >= now else {
                 cachedSegments.removeValue(forKey: key)
                 return nil
             }
@@ -572,9 +596,38 @@ final class MapKitRoutePlanningService: RoutePlanningServing {
     private func pruneExpiredCacheEntries(now: Date) {
         withCacheLock {
             cachedSegments = cachedSegments.filter {
-                now.timeIntervalSince($0.value.createdAt) <= cacheTTL
+                $0.value.expiresAt >= now
             }
         }
+    }
+
+    private func cacheSegment(
+        _ segment: RouteSegment,
+        for key: SegmentRequestKey
+    ) {
+        let now = Date()
+        let entry = CachedSegmentEntry(
+            segment: segment,
+            expiresAt: now.addingTimeInterval(cacheTTL(for: segment)),
+            lastAccessedAt: now
+        )
+
+        withCacheLock {
+            cachedSegments[key] = entry
+        }
+        evictLeastRecentlyUsedEntriesIfNeeded()
+    }
+
+    private func cacheTTL(for segment: RouteSegment) -> TimeInterval {
+        if segment.hasWarnings {
+            return degradedSegmentCacheTTL
+        }
+
+        if segment.isExternalTransit || segment.travelMode == .driving {
+            return dynamicSegmentCacheTTL
+        }
+
+        return stableSegmentCacheTTL
     }
 
     private func evictLeastRecentlyUsedEntriesIfNeeded() {

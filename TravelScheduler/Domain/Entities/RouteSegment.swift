@@ -59,6 +59,14 @@ struct RouteSegment: Identifiable {
         details.contains { $0.kind == .warning }
     }
 
+    var stepDetails: [Detail] {
+        details.filter { $0.kind == .step }
+    }
+
+    var warningDetails: [Detail] {
+        details.filter { $0.kind == .warning }
+    }
+
     var transitRouteReference: TransitRouteReference? {
         guard case .externalTransit(let reference) = representation else { return nil }
         return reference
