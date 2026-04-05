@@ -10,19 +10,22 @@ struct SettingsSheetView: View {
 
     @Bindable var viewModel: TripPlannerViewModel
     @Binding var isPresented: Bool
-    @State private var editMode: EditMode = .active
     @State private var routePlanDocument: RoutePlanDocument?
 
     var body: some View {
         NavigationStack {
             List {
                 searchSection
+                selectedStopsSection
                 routePlanningSection
                 routeLegModesSection
-                selectedStopsSection
             }
             .listStyle(.insetGrouped)
-            .environment(\.editMode, $editMode)
+            .searchable(
+                text: searchTextBinding,
+                placement: .navigationBarDrawer(displayMode: .always),
+                prompt: L10n.settingsSearchPlaceholder
+            )
             .navigationTitle(L10n.settingsTitle)
             .toolbar {
                 ToolbarItem(placement: .topBarTrailing) {
@@ -39,10 +42,14 @@ struct SettingsSheetView: View {
 
     private var searchSection: some View {
         Section(L10n.settingsSearchSection) {
-            TextField(L10n.settingsSearchPlaceholder, text: searchTextBinding)
-                .textInputAutocapitalization(.never)
-                .autocorrectionDisabled()
-                .submitLabel(.search)
+            if viewModel.searchText.isEmpty,
+               viewModel.searchResults.isEmpty,
+               viewModel.searchStatus == nil,
+               !viewModel.isSearching {
+                Text(L10n.settingsSearchHint)
+                    .font(.footnote)
+                    .foregroundStyle(.secondary)
+            }
 
             if viewModel.isSearching {
                 ProgressView(L10n.settingsSearchLoading)
@@ -54,25 +61,35 @@ struct SettingsSheetView: View {
 
             if !viewModel.searchResults.isEmpty {
                 ForEach(viewModel.searchResults, id: \.self) { item in
-                    VStack(alignment: .leading, spacing: 6) {
-                        Text(item.name ?? L10n.commonUnnamedPlace)
-                            .font(.headline)
+                    Button {
+                        viewModel.addStop(from: item)
+                    } label: {
+                        HStack(alignment: .top, spacing: 12) {
+                            VStack(alignment: .leading, spacing: 6) {
+                                Text(item.name ?? L10n.commonUnnamedPlace)
+                                    .font(.headline)
 
-                        Text(item.displayAddress)
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
+                                Text(item.displayAddress)
+                                    .font(.caption)
+                                    .foregroundStyle(.secondary)
+                            }
 
-                        Button(L10n.settingsAddToItinerary) {
-                            viewModel.addStop(from: item)
+                            Spacer(minLength: 8)
+
+                            Image(systemName: "plus.circle.fill")
+                                .font(.title3.weight(.semibold))
+                                .foregroundStyle(.tint)
+                                .accessibilityHidden(true)
                         }
-                        .buttonStyle(.bordered)
-                        .accessibilityLabel(
-                            L10n.settingsAddToItineraryAccessibility(
-                                name: item.name ?? L10n.commonPlace
-                            )
-                        )
+                        .contentShape(Rectangle())
+                        .padding(.vertical, 4)
                     }
-                    .padding(.vertical, 4)
+                    .buttonStyle(.plain)
+                    .accessibilityLabel(
+                        L10n.settingsAddToItineraryAccessibility(
+                            name: item.name ?? L10n.commonPlace
+                        )
+                    )
                 }
             }
         }
@@ -196,39 +213,11 @@ struct SettingsSheetView: View {
     }
 
     private var selectedStopsSection: some View {
-        Section(L10n.settingsSelectedPlacesSection) {
-            if viewModel.plannedStops.isEmpty {
-                ContentUnavailableView(L10n.settingsNoSelectedPlaces, systemImage: "list.bullet.rectangle")
-            } else {
-                ForEach(Array(viewModel.plannedStops.enumerated()), id: \.element.id) { idx, stop in
-                    HStack(alignment: .top, spacing: 12) {
-                        Circle()
-                            .fill(RoutePalette.color(at: idx))
-                            .frame(width: 12, height: 12)
-                            .padding(.top, 4)
-
-                        VStack(alignment: .leading, spacing: 4) {
-                            Text("\(idx + 1). \(stop.name)")
-                                .font(.body)
-                            Text(stop.subtitle)
-                                .font(.caption)
-                                .foregroundStyle(.secondary)
-                        }
-
-                        Spacer(minLength: 8)
-                    }
-                    .padding(.vertical, 2)
-                    .swipeActions(edge: .trailing, allowsFullSwipe: false) {
-                        Button(role: .destructive) {
-                            viewModel.removeStop(at: idx)
-                        } label: {
-                            Label(L10n.commonDelete, systemImage: "trash")
-                        }
-                    }
-                }
-                .onMove(perform: viewModel.moveStops)
-            }
-        }
+        SelectedStopsSectionView(
+            plannedStops: plannedStopsBinding,
+            stopIndicesByID: plannedStopIndicesByID,
+            canMoveStops: viewModel.plannedStops.count > 1
+        )
     }
 
     private var searchTextBinding: Binding<String> {
@@ -245,6 +234,21 @@ struct SettingsSheetView: View {
         )
     }
 
+    private var plannedStopsBinding: Binding<[TripStop]> {
+        Binding(
+            get: { viewModel.plannedStops },
+            set: viewModel.applyEditedPlannedStops
+        )
+    }
+
+    private var plannedStopIndicesByID: [UUID: Int] {
+        Dictionary(
+            uniqueKeysWithValues: viewModel.plannedStops.enumerated().map { index, stop in
+                (stop.id, index)
+            }
+        )
+    }
+
     private func segmentModeBinding(for leg: TripPlanDraft.RouteLeg) -> Binding<TravelMode> {
         Binding(
             get: { viewModel.modeForLeg(leg) },
@@ -254,7 +258,7 @@ struct SettingsSheetView: View {
 
     @ViewBuilder
     private func statusView(_ status: TripPlannerViewModel.StatusMessage) -> some View {
-        Text(status.message)
+        Label(status.message, systemImage: status.tone.systemImage)
             .font(.footnote)
             .foregroundStyle(status.tone.color)
     }
@@ -274,5 +278,61 @@ struct SettingsSheetView: View {
             Spacer(minLength: 0)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
+    }
+
+    private struct SelectedStopsSectionView: View {
+        @Binding var plannedStops: [TripStop]
+        let stopIndicesByID: [UUID: Int]
+        let canMoveStops: Bool
+
+        var body: some View {
+            Section {
+                if plannedStops.isEmpty {
+                    ContentUnavailableView(
+                        L10n.settingsNoSelectedPlaces,
+                        systemImage: "list.bullet.rectangle"
+                    )
+                } else {
+                    ForEach($plannedStops, editActions: .all) { $stop in
+                        SelectedStopRow(
+                            stop: $stop.wrappedValue,
+                            index: stopIndicesByID[$stop.wrappedValue.id] ?? 0
+                        )
+                        .moveDisabled(!canMoveStops)
+                    }
+                }
+            } header: {
+                Text(L10n.settingsSelectedPlacesSection)
+            } footer: {
+                if !plannedStops.isEmpty {
+                    Text(L10n.settingsSelectedPlacesHint)
+                }
+            }
+        }
+    }
+
+    private struct SelectedStopRow: View {
+        let stop: TripStop
+        let index: Int
+
+        var body: some View {
+            HStack(alignment: .top, spacing: 12) {
+                Circle()
+                    .fill(RoutePalette.color(at: index))
+                    .frame(width: 12, height: 12)
+                    .padding(.top, 4)
+
+                VStack(alignment: .leading, spacing: 4) {
+                    Text("\(index + 1). \(stop.name)")
+                        .font(.body)
+                    Text(stop.subtitle)
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+
+                Spacer(minLength: 8)
+            }
+            .padding(.vertical, 2)
+        }
     }
 }

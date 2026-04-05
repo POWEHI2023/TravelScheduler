@@ -2,6 +2,7 @@ import SwiftUI
 
 struct RouteSegmentsSheetView: View {
     let segments: [RouteSegment]
+    @Environment(\.dismiss) private var dismiss
     @State private var expandedSegmentIDs: Set<UUID> = []
 
     var body: some View {
@@ -42,6 +43,13 @@ struct RouteSegmentsSheetView: View {
             }
             .navigationTitle(L10n.routeSegmentsTitle)
             .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .topBarTrailing) {
+                    Button(L10n.commonClose) {
+                        dismiss()
+                    }
+                }
+            }
         }
     }
 
@@ -77,7 +85,8 @@ struct RouteSegmentsSheetView: View {
                         isExpanded ? L10n.routeSegmentHideDetails : L10n.routeSegmentShowDetails,
                         systemImage: isExpanded ? "chevron.up" : "chevron.down"
                     )
-                    .font(.caption.weight(.semibold))
+                    .font(.subheadline.weight(.semibold))
+                    .frame(maxWidth: .infinity, alignment: .leading)
                 }
                 .buttonStyle(.plain)
             }

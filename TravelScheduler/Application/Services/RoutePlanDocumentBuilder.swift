@@ -22,14 +22,14 @@ enum RoutePlanDocumentBuilder {
         lines.append("## \(L10n.markdownOverviewSection)")
         lines.append("")
         lines.append("- \(L10n.markdownGeneratedAt(AppFormatters.timestamp(generatedAt)))")
-        lines.append("- \(L10n.markdownStart(singleLineText(context.draft.startStop?.name ?? "—")))")
-        lines.append("- \(L10n.markdownEnd(singleLineText(context.draft.endStop?.name ?? "—")))")
+        lines.append("- \(L10n.markdownStart(markdownSafeText(context.draft.startStop?.name ?? "—")))")
+        lines.append("- \(L10n.markdownEnd(markdownSafeText(context.draft.endStop?.name ?? "—")))")
         lines.append(
             "- \(L10n.markdownIsLoop(context.draft.loopToStart ? L10n.commonYes : L10n.commonNo))"
         )
 
         if let routeOrderDescription = context.draft.routeOrderDescription {
-            lines.append("- \(L10n.markdownRouteOrder(singleLineText(routeOrderDescription)))")
+            lines.append("- \(L10n.markdownRouteOrder(markdownSafeText(routeOrderDescription)))")
         }
 
         if !context.routeSegments.isEmpty {
@@ -44,10 +44,10 @@ enum RoutePlanDocumentBuilder {
         }
 
         if let routeStatusMessage = context.routeStatusMessage {
-            lines.append("- \(L10n.markdownCurrentStatus(singleLineText(routeStatusMessage)))")
+            lines.append("- \(L10n.markdownCurrentStatus(markdownSafeText(routeStatusMessage)))")
         }
 
-        lines.append("- \(L10n.markdownTravelSuggestion(singleLineText(context.travelSuggestion)))")
+        lines.append("- \(L10n.markdownTravelSuggestion(markdownSafeText(context.travelSuggestion)))")
         lines.append("")
         lines.append("## \(L10n.markdownPlacesSection)")
         lines.append("")
@@ -57,9 +57,9 @@ enum RoutePlanDocumentBuilder {
         } else {
             for (index, stop) in context.draft.plannedStops.enumerated() {
                 let roleSuffix = stopRoleSuffix(for: stop, draft: context.draft)
-                lines.append("\(index + 1). \(singleLineText(stop.name))\(roleSuffix)")
+                lines.append("\(index + 1). \(markdownSafeText(stop.name))\(roleSuffix)")
 
-                let trimmedSubtitle = singleLineText(stop.subtitle)
+                let trimmedSubtitle = markdownSafeText(stop.subtitle)
                 if !trimmedSubtitle.isEmpty {
                     lines.append("   - \(L10n.markdownAddress(trimmedSubtitle))")
                 }
@@ -77,12 +77,32 @@ enum RoutePlanDocumentBuilder {
                 lines.append("### \(L10n.markdownSegmentTitle(index + 1))")
                 lines.append("")
                 lines.append(
-                    "- \(L10n.markdownSegmentStartEnd(from: singleLineText(segment.from.name), to: singleLineText(segment.to.name)))"
+                    "- \(L10n.markdownSegmentStartEnd(from: markdownSafeText(segment.from.name), to: markdownSafeText(segment.to.name)))"
                 )
-                lines.append("- \(L10n.markdownSegmentMode(segmentModeDescription(for: segment)))")
+                lines.append("- \(L10n.markdownSegmentMode(markdownSafeText(segmentModeDescription(for: segment))))")
                 lines.append(
                     "- \(L10n.markdownSegmentDuration(AppFormatters.duration(segment.expectedTravelTime)))"
                 )
+
+                if let routeName = segment.routeName {
+                    lines.append("- \(L10n.markdownSegmentRouteName(markdownSafeText(routeName)))")
+                }
+
+                if let transitReference = segment.transitRouteReference {
+                    lines.append(
+                        "- \(L10n.markdownSegmentOpenInProvider(markdownSafeText(transitReference.provider.displayName)))"
+                    )
+                    lines.append(
+                        "- \(L10n.markdownSegmentTransitPreferences(markdownSafeText(transitReference.preferredModesDescription)))"
+                    )
+                }
+
+                for warning in segment.warningDetails {
+                    lines.append(
+                        "  - \(L10n.markdownSegmentWarning(markdownSafeText(warning.instruction)))"
+                    )
+                }
+
                 lines.append("")
             }
         }
@@ -91,8 +111,8 @@ enum RoutePlanDocumentBuilder {
     }
 
     private static func stopRoleSuffix(for stop: TripStop, draft: TripPlanDraft) -> String {
-        let isStart = stop.id == draft.startStopID
-        let isEnd = stop.id == draft.endStopID
+        let isStart = stop.id == draft.startStop?.id
+        let isEnd = stop.id == draft.endStop?.id
 
         if isStart && isEnd {
             return L10n.routeStopRoleStartEnd
@@ -132,5 +152,26 @@ enum RoutePlanDocumentBuilder {
             .filter { !$0.isEmpty }
             .joined(separator: " ")
             .trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
+    private static func markdownSafeText(_ text: String) -> String {
+        escapeMarkdown(in: singleLineText(text))
+    }
+
+    private static func escapeMarkdown(in text: String) -> String {
+        var escapedText = ""
+        escapedText.reserveCapacity(text.count)
+
+        for character in text {
+            switch character {
+            case "\\", "`", "*", "_", "{", "}", "[", "]", "(", ")", "#", "+", "-", "!", "|", ">":
+                escapedText.append("\\")
+                escapedText.append(character)
+            default:
+                escapedText.append(character)
+            }
+        }
+
+        return escapedText
     }
 }

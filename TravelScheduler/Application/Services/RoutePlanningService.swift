@@ -1,5 +1,5 @@
 import Foundation
-import MapKit
+@preconcurrency import MapKit
 
 protocol RoutePlanningServing {
     func makeSegments(for stops: [TripStop], segmentModes: [TravelMode]) async throws -> [RouteSegment]
@@ -15,6 +15,12 @@ final class MapKitRoutePlanningService: RoutePlanningServing {
     private struct RoutingCandidate {
         let transportType: MKDirectionsTransportType
         let resolvedMode: TravelMode
+    }
+
+    private struct SegmentRequestKey: Hashable {
+        let fromKey: String
+        let toKey: String
+        let mode: TravelMode
     }
 
     private struct CachedSegmentPayload {
@@ -57,22 +63,22 @@ final class MapKitRoutePlanningService: RoutePlanningServing {
         }
     }
 
-    private struct SegmentRequestKey: Hashable {
-        let fromKey: String
-        let toKey: String
-        let mode: TravelMode
-    }
-
     private struct CachedSegmentEntry {
         let payload: CachedSegmentPayload
         let expiresAt: Date
         var lastAccessedAt: Date
     }
 
-    private let stableSegmentCacheTTL: TimeInterval = 15 * 60
-    private let dynamicSegmentCacheTTL: TimeInterval = 5 * 60
-    private let degradedSegmentCacheTTL: TimeInterval = 3 * 60
-    private let maxCachedSegments = 120
+    private enum PlanningError: Error {
+        case timedOut
+    }
+
+    private let defaultCacheTTL: TimeInterval = 5 * 60
+    private let degradedCacheTTL: TimeInterval = 90
+    private let maxCachedSegments = 64
+    private let routeRequestTimeoutNanoseconds: UInt64 = 8_000_000_000
+    private let transitETATimeoutNanoseconds: UInt64 = 4_000_000_000
+
     private let cacheLock = NSLock()
     private var cachedSegments: [SegmentRequestKey: CachedSegmentEntry] = [:]
 
@@ -86,13 +92,15 @@ final class MapKitRoutePlanningService: RoutePlanningServing {
         segments.reserveCapacity(stops.count - 1)
 
         for index in 0..<(stops.count - 1) {
+            try Task.checkCancellation()
+
             let sourceStop = stops[index]
             let destinationStop = stops[index + 1]
-            let mode = modeForSegment(at: index, segmentModes: segmentModes)
+            let preferredMode = modeForSegment(at: index, segmentModes: segmentModes)
             let cacheKey = SegmentRequestKey(
                 fromKey: sourceStop.routeCacheKey,
                 toKey: destinationStop.routeCacheKey,
-                mode: mode
+                mode: preferredMode
             )
 
             if let cachedSegment = resolveCachedSegment(
@@ -105,15 +113,14 @@ final class MapKitRoutePlanningService: RoutePlanningServing {
                 continue
             }
 
-            let computedSegment = try await makeSegment(
+            let segment = try await makeSegment(
                 from: sourceStop,
                 to: destinationStop,
-                preferredMode: mode
+                preferredMode: preferredMode
             )
 
-            cacheSegment(computedSegment, for: cacheKey)
-
-            segments.append(computedSegment)
+            cacheSegment(segment, for: cacheKey)
+            segments.append(segment)
         }
 
         return segments
@@ -154,14 +161,6 @@ final class MapKitRoutePlanningService: RoutePlanningServing {
                     resolution: resolved
                 )
             }
-
-            return makeFallbackSegment(
-                from: sourceStop,
-                to: destinationStop,
-                requestedTravelMode: preferredMode,
-                mode: preferredMode,
-                warning: L10n.routeServiceStraightLineFallback
-            )
         } catch {
             if error is CancellationError {
                 throw error
@@ -177,12 +176,22 @@ final class MapKitRoutePlanningService: RoutePlanningServing {
                 )
             )
         }
+
+        return makeFallbackSegment(
+            from: sourceStop,
+            to: destinationStop,
+            requestedTravelMode: preferredMode,
+            mode: preferredMode,
+            warning: L10n.routeServiceStraightLineFallback
+        )
     }
 
     private func makeTransitSegment(
         from sourceStop: TripStop,
         to destinationStop: TripStop
     ) async throws -> RouteSegment {
+        let fallbackWarning: String
+
         do {
             if let eta = try await resolveTransitETA(from: sourceStop, to: destinationStop) {
                 return makeExternalTransitSegment(
@@ -191,10 +200,14 @@ final class MapKitRoutePlanningService: RoutePlanningServing {
                     expectedTravelTime: eta
                 )
             }
+
+            fallbackWarning = L10n.routeServiceTransitExternalFallback
         } catch {
             if error is CancellationError {
                 throw error
             }
+
+            fallbackWarning = transitFallbackWarning(for: error)
         }
 
         if let fallbackSegment = try await resolveTransitFallbackSegment(
@@ -204,19 +217,11 @@ final class MapKitRoutePlanningService: RoutePlanningServing {
             return fallbackSegment
         }
 
-        return makeFallbackSegment(
+        return makeEstimatedExternalTransitSegment(
             from: sourceStop,
             to: destinationStop,
-            requestedTravelMode: .transit,
-            mode: .transit,
-            warning: L10n.routeServiceTransitNoSolutionNoFallback,
-            mapRenderStyle: .connector
+            warning: fallbackWarning
         )
-    }
-
-    private func modeForSegment(at index: Int, segmentModes: [TravelMode]) -> TravelMode {
-        guard segmentModes.indices.contains(index) else { return .driving }
-        return segmentModes[index]
     }
 
     private func resolveRoute(
@@ -237,15 +242,12 @@ final class MapKitRoutePlanningService: RoutePlanningServing {
                     continue
                 }
 
-                let warning: String?
-                if index == 0 {
-                    warning = nil
-                } else {
-                    warning = L10n.routeServicePreferredFallback(
+                let warning = index == 0
+                    ? nil
+                    : L10n.routeServicePreferredFallback(
                         preferredMode: preferredMode.localizedName,
                         resolvedMode: candidate.resolvedMode.localizedName
                     )
-                }
 
                 return RouteResolution(
                     route: route,
@@ -282,17 +284,17 @@ final class MapKitRoutePlanningService: RoutePlanningServing {
                     continue
                 }
 
-                let resolution = RouteResolution(
-                    route: route,
-                    resolvedMode: fallbackMode,
-                    warning: L10n.routeServiceTransitFallbackMode(fallbackMode.localizedName)
-                )
-
                 return makeResolvedSegment(
                     from: sourceStop,
                     to: destinationStop,
                     requestedTravelMode: .transit,
-                    resolution: resolution
+                    resolution: RouteResolution(
+                        route: route,
+                        resolvedMode: fallbackMode,
+                        warning: L10n.routeServiceTransitFallbackMode(
+                            fallbackMode.localizedName
+                        )
+                    )
                 )
             } catch {
                 if error is CancellationError {
@@ -302,6 +304,90 @@ final class MapKitRoutePlanningService: RoutePlanningServing {
         }
 
         return nil
+    }
+
+    private func resolveTransitETA(
+        from sourceStop: TripStop,
+        to destinationStop: TripStop
+    ) async throws -> TimeInterval? {
+        try await performDirectionsRequest(
+            from: sourceStop,
+            to: destinationStop,
+            transportType: .transit,
+            timeoutNanoseconds: transitETATimeoutNanoseconds
+        ) { directions in
+            let response = try await directions.calculateETA()
+            return response.expectedTravelTime
+        }
+    }
+
+    private func calculateRoute(
+        from sourceStop: TripStop,
+        to destinationStop: TripStop,
+        transportType: MKDirectionsTransportType
+    ) async throws -> MKRoute? {
+        try await performDirectionsRequest(
+            from: sourceStop,
+            to: destinationStop,
+            transportType: transportType,
+            timeoutNanoseconds: routeRequestTimeoutNanoseconds
+        ) { directions in
+            let response = try await directions.calculate()
+            return response.routes.first
+        }
+    }
+
+    private func performDirectionsRequest<Result>(
+        from sourceStop: TripStop,
+        to destinationStop: TripStop,
+        transportType: MKDirectionsTransportType,
+        timeoutNanoseconds: UInt64,
+        operation: @escaping @Sendable (MKDirections) async throws -> Result
+    ) async throws -> Result {
+        let directions = MKDirections(
+            request: makeDirectionsRequest(
+                from: sourceStop,
+                to: destinationStop,
+                transportType: transportType
+            )
+        )
+
+        return try await withTaskCancellationHandler {
+            try await withTimeout(timeoutNanoseconds) {
+                try await withTaskCancellationHandler {
+                    try await operation(directions)
+                } onCancel: {
+                    directions.cancel()
+                }
+            }
+        } onCancel: {
+            directions.cancel()
+        }
+    }
+
+    private func withTimeout<Result>(
+        _ nanoseconds: UInt64,
+        operation: @escaping @Sendable () async throws -> Result
+    ) async throws -> Result {
+        try await withThrowingTaskGroup(of: Result.self) { group in
+            group.addTask {
+                try await operation()
+            }
+
+            group.addTask {
+                try await Task.sleep(nanoseconds: nanoseconds)
+                throw PlanningError.timedOut
+            }
+
+            let result = try await group.next()!
+            group.cancelAll()
+            return result
+        }
+    }
+
+    private func modeForSegment(at index: Int, segmentModes: [TravelMode]) -> TravelMode {
+        guard segmentModes.indices.contains(index) else { return .driving }
+        return segmentModes[index]
     }
 
     private func routingCandidates(for preferredMode: TravelMode) -> [RoutingCandidate] {
@@ -350,7 +436,8 @@ final class MapKitRoutePlanningService: RoutePlanningServing {
     private func makeExternalTransitSegment(
         from sourceStop: TripStop,
         to destinationStop: TripStop,
-        expectedTravelTime: TimeInterval
+        expectedTravelTime: TimeInterval,
+        warning: String? = nil
     ) -> RouteSegment {
         let transitReference = TransitRouteReference(
             launchURL: appleMapsTransitURL(from: sourceStop, to: destinationStop),
@@ -367,9 +454,25 @@ final class MapKitRoutePlanningService: RoutePlanningServing {
             expectedTravelTime: expectedTravelTime,
             polyline: directPolyline(from: sourceStop, to: destinationStop),
             routeName: L10n.routeServiceAppleMapsTransitRouteName,
-            details: [],
+            details: warning.map { [makeWarningDetail($0)] } ?? [],
             representation: .externalTransit(transitReference),
             mapRenderStyle: .connector
+        )
+    }
+
+    private func makeEstimatedExternalTransitSegment(
+        from sourceStop: TripStop,
+        to destinationStop: TripStop,
+        warning: String
+    ) -> RouteSegment {
+        makeExternalTransitSegment(
+            from: sourceStop,
+            to: destinationStop,
+            expectedTravelTime: estimatedTransitTravelTime(
+                from: sourceStop,
+                to: destinationStop
+            ),
+            warning: warning
         )
     }
 
@@ -398,61 +501,66 @@ final class MapKitRoutePlanningService: RoutePlanningServing {
         )
     }
 
-    private func resolveTransitETA(
-        from sourceStop: TripStop,
-        to destinationStop: TripStop
-    ) async throws -> TimeInterval? {
-        let directions = MKDirections(
-            request: makeDirectionsRequest(
-                from: sourceStop,
-                to: destinationStop,
-                transportType: .transit
+    private func makeSegmentDetails(
+        from route: MKRoute,
+        resolvedMode: TravelMode
+    ) -> [RouteSegment.Detail] {
+        route.steps.compactMap { step in
+            let instruction = step.instructions.trimmingCharacters(in: .whitespacesAndNewlines)
+            let notice = step.notice?.trimmingCharacters(in: .whitespacesAndNewlines)
+            let normalizedNotice = notice?.isEmpty == true ? nil : notice
+
+            guard !instruction.isEmpty || normalizedNotice != nil else { return nil }
+
+            return RouteSegment.Detail(
+                kind: .step,
+                transportDescription: transportDescription(
+                    for: step.transportType,
+                    resolvedMode: resolvedMode
+                ),
+                instruction: instruction.isEmpty
+                    ? L10n.routeServiceContinueToDestination
+                    : instruction,
+                notice: normalizedNotice,
+                distance: step.distance
             )
-        )
-
-        return try await withTaskCancellationHandler {
-            try await withCheckedThrowingContinuation { continuation in
-                directions.calculateETA { response, error in
-                    if let error {
-                        continuation.resume(throwing: error)
-                        return
-                    }
-
-                    continuation.resume(returning: response?.expectedTravelTime)
-                }
-            }
-        } onCancel: {
-            directions.cancel()
         }
     }
 
-    private func calculateRoute(
-        from sourceStop: TripStop,
-        to destinationStop: TripStop,
-        transportType: MKDirectionsTransportType
-    ) async throws -> MKRoute? {
-        let directions = MKDirections(
-            request: makeDirectionsRequest(
-                from: sourceStop,
-                to: destinationStop,
-                transportType: transportType
-            )
+    private func detailsWithWarning(
+        baseDetails: [RouteSegment.Detail],
+        warning: String?
+    ) -> [RouteSegment.Detail] {
+        guard let warning else { return baseDetails }
+        return [makeWarningDetail(warning)] + baseDetails
+    }
+
+    private func makeWarningDetail(_ warning: String) -> RouteSegment.Detail {
+        RouteSegment.Detail(
+            kind: .warning,
+            transportDescription: L10n.commonWarningLabel,
+            instruction: warning,
+            distance: 0
         )
+    }
 
-        return try await withTaskCancellationHandler {
-            try await withCheckedThrowingContinuation { continuation in
-                directions.calculate { response, error in
-                    if let error {
-                        continuation.resume(throwing: error)
-                        return
-                    }
-
-                    continuation.resume(returning: response?.routes.first)
-                }
-            }
-        } onCancel: {
-            directions.cancel()
+    private func transportDescription(
+        for transportType: MKDirectionsTransportType,
+        resolvedMode: TravelMode
+    ) -> String {
+        if transportType.contains(.automobile) {
+            return TravelMode.driving.localizedName
         }
+
+        if transportType.contains(.walking) {
+            return TravelMode.walking.localizedName
+        }
+
+        if transportType.contains(.transit) {
+            return TravelMode.transit.localizedName
+        }
+
+        return resolvedMode.localizedName
     }
 
     private func makeDirectionsRequest(
@@ -531,8 +639,28 @@ final class MapKitRoutePlanningService: RoutePlanningServing {
         }
     }
 
+    private func estimatedTransitTravelTime(
+        from sourceStop: TripStop,
+        to destinationStop: TripStop
+    ) -> TimeInterval {
+        max(directDistance(from: sourceStop, to: destinationStop) / estimatedSpeed(for: .transit), 60)
+    }
+
+    private func transitFallbackWarning(for error: Error) -> String {
+        if error is PlanningError {
+            return L10n.routeServiceTransitETATimedOut
+        }
+
+        return L10n.routeServiceTransitExternalFallback
+    }
+
     private func reasonText(for error: Error?, preferredMode: TravelMode) -> String {
         guard let error else { return L10n.routeServiceModeUnavailable(preferredMode.localizedName) }
+
+        if error is PlanningError {
+            return L10n.routeServiceTimedOut
+        }
+
         guard let mkError = error as? MKError else {
             return L10n.routeServiceModeFailed(preferredMode.localizedName)
         }
@@ -546,47 +674,6 @@ final class MapKitRoutePlanningService: RoutePlanningServing {
             return L10n.routeServiceUnavailable
         default:
             return L10n.routeServiceModeFailed(preferredMode.localizedName)
-        }
-    }
-
-    private func makeWarningDetail(_ warning: String) -> RouteSegment.Detail {
-        RouteSegment.Detail(
-            kind: .warning,
-            transportDescription: L10n.commonWarningLabel,
-            instruction: warning,
-            distance: 0
-        )
-    }
-
-    private func detailsWithWarning(
-        baseDetails: [RouteSegment.Detail],
-        warning: String?
-    ) -> [RouteSegment.Detail] {
-        guard let warning else { return baseDetails }
-        return [makeWarningDetail(warning)] + baseDetails
-    }
-
-    private func makeSegmentDetails(
-        from route: MKRoute,
-        resolvedMode: TravelMode
-    ) -> [RouteSegment.Detail] {
-        route.steps.compactMap { step in
-            let instruction = step.instructions.trimmingCharacters(in: .whitespacesAndNewlines)
-            let notice = step.notice?.trimmingCharacters(in: .whitespacesAndNewlines)
-            let normalizedNotice = notice?.isEmpty == true ? nil : notice
-
-            guard !instruction.isEmpty || normalizedNotice != nil else { return nil }
-
-            return RouteSegment.Detail(
-                kind: .step,
-                transportDescription: transportDescription(
-                    for: step.transportType,
-                    resolvedMode: resolvedMode
-                ),
-                instruction: instruction.isEmpty ? L10n.routeServiceContinueToDestination : instruction,
-                notice: normalizedNotice,
-                distance: step.distance
-            )
         }
     }
 
@@ -611,16 +698,11 @@ final class MapKitRoutePlanningService: RoutePlanningServing {
 
     private func pruneExpiredCacheEntries(now: Date) {
         withCacheLock {
-            cachedSegments = cachedSegments.filter {
-                $0.value.expiresAt >= now
-            }
+            cachedSegments = cachedSegments.filter { $0.value.expiresAt >= now }
         }
     }
 
-    private func cacheSegment(
-        _ segment: RouteSegment,
-        for key: SegmentRequestKey
-    ) {
+    private func cacheSegment(_ segment: RouteSegment, for key: SegmentRequestKey) {
         let now = Date()
         let entry = CachedSegmentEntry(
             payload: CachedSegmentPayload(segment: segment),
@@ -635,15 +717,7 @@ final class MapKitRoutePlanningService: RoutePlanningServing {
     }
 
     private func cacheTTL(for segment: RouteSegment) -> TimeInterval {
-        if segment.hasWarnings {
-            return degradedSegmentCacheTTL
-        }
-
-        if segment.isExternalTransit || segment.travelMode == .driving {
-            return dynamicSegmentCacheTTL
-        }
-
-        return stableSegmentCacheTTL
+        segment.hasWarnings ? degradedCacheTTL : defaultCacheTTL
     }
 
     private func evictLeastRecentlyUsedEntriesIfNeeded() {
@@ -660,26 +734,7 @@ final class MapKitRoutePlanningService: RoutePlanningServing {
         }
     }
 
-    private func transportDescription(
-        for transportType: MKDirectionsTransportType,
-        resolvedMode: TravelMode
-    ) -> String {
-        if transportType.contains(.automobile) {
-            return TravelMode.driving.localizedName
-        }
-
-        if transportType.contains(.walking) {
-            return TravelMode.walking.localizedName
-        }
-
-        if transportType.contains(.transit) {
-            return TravelMode.transit.localizedName
-        }
-
-        return resolvedMode.localizedName
-    }
-
-    private func withCacheLock<T>(_ body: () -> T) -> T {
+    private func withCacheLock<Result>(_ body: () -> Result) -> Result {
         cacheLock.lock()
         defer { cacheLock.unlock() }
         return body()

@@ -18,19 +18,7 @@ struct TripPlanDraft {
     }
 
     var endStop: TripStop? {
-        if loopToStart {
-            return startStop
-        }
-
-        return plannedStops.last
-    }
-
-    var startStopID: UUID? {
-        startStop?.id
-    }
-
-    var endStopID: UUID? {
-        endStop?.id
+        loopToStart ? startStop : plannedStops.last
     }
 
     var orderedStops: [TripStop] {

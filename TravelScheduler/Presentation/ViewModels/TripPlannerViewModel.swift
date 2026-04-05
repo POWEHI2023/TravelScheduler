@@ -6,6 +6,12 @@ import SwiftUI
 @MainActor
 @Observable
 final class TripPlannerViewModel {
+    private struct CachedSearchEntry {
+        let items: [MKMapItem]
+        let expiresAt: Date
+        var lastAccessedAt: Date
+    }
+
     struct StatusMessage: Equatable {
         enum Tone: Equatable {
             case info
@@ -42,10 +48,14 @@ final class TripPlannerViewModel {
     private(set) var loopToStart = false
 
     private let defaultSegmentMode: TravelMode = .driving
+    private let searchDebounceNanoseconds: UInt64 = 280_000_000
+    private let searchCacheTTL: TimeInterval = 4 * 60
+    private let maxCachedSearchEntries = 24
     private let placeSearchService: PlaceSearchServing
     private let routePlanningService: RoutePlanningServing
 
     private var segmentModesByLeg: [TripPlanDraft.RouteLeg: TravelMode] = [:]
+    private var searchCache: [String: CachedSearchEntry] = [:]
     private var pendingSearchTask: Task<Void, Never>?
     private var pendingRouteTask: Task<[RouteSegment], Error>?
     private var activeSearchKeyword: String?
@@ -110,10 +120,6 @@ final class TripPlannerViewModel {
         currentDraft.routeOrderDescription
     }
 
-    var routeDetailsButtonTitle: String {
-        L10n.routeDetailsButtonTitle(segmentCount: routeSegments.count)
-    }
-
     func makeRoutePlanMarkdownDocument(generatedAt: Date = .now) -> String {
         RoutePlanDocumentBuilder.makeMarkdown(
             context: .init(
@@ -155,6 +161,7 @@ final class TripPlannerViewModel {
     // MARK: - Endpoint and Segment State
 
     func updateLoopToStart(_ enabled: Bool) {
+        guard loopToStart != enabled else { return }
         loopToStart = enabled
 
         let baseMessage = enabled ? L10n.routeLoopEnabled : L10n.routeLoopDisabled
@@ -170,6 +177,8 @@ final class TripPlannerViewModel {
     }
 
     func setMode(_ mode: TravelMode, for leg: TripPlanDraft.RouteLeg) {
+        guard modeForLeg(leg) != mode else { return }
+
         if mode == defaultSegmentMode {
             segmentModesByLeg.removeValue(forKey: leg)
         } else {
@@ -211,18 +220,32 @@ final class TripPlannerViewModel {
         )
     }
 
-    func moveStops(from source: IndexSet, to destination: Int) {
-        plannedStops.move(fromOffsets: source, toOffset: destination)
+    func applyEditedPlannedStops(_ updatedStops: [TripStop]) {
+        let previousStops = plannedStops
+        let currentStopIDs = previousStops.map(\.id)
+        let updatedStopIDs = updatedStops.map(\.id)
+        guard currentStopIDs != updatedStopIDs else { return }
 
-        invalidateRouteAfterPlanChange(baseMessage: L10n.routeOrderUpdated)
-    }
+        plannedStops = updatedStops
 
-    func removeStop(at index: Int) {
-        guard plannedStops.indices.contains(index) else { return }
-        let removedName = plannedStops[index].name
-        plannedStops.remove(at: index)
+        if previousStops.count == updatedStops.count {
+            invalidateRouteAfterPlanChange(baseMessage: L10n.routeOrderUpdated)
+            return
+        }
 
-        invalidateRouteAfterPlanChange(baseMessage: L10n.routeDeleted(removedName))
+        let updatedStopIDSet = Set(updatedStopIDs)
+        let removedStops = previousStops.filter { !updatedStopIDSet.contains($0.id) }
+
+        let baseMessage: String
+        if removedStops.count == 1 {
+            baseMessage = L10n.routeDeleted(removedStops[0].name)
+        } else if removedStops.count > 1 {
+            baseMessage = L10n.routeDeletedStops(removedStops.count)
+        } else {
+            baseMessage = L10n.routeOrderUpdated
+        }
+
+        invalidateRouteAfterPlanChange(baseMessage: baseMessage)
     }
 
     // MARK: - Route Planning
@@ -246,7 +269,7 @@ final class TripPlannerViewModel {
         isPlanningRoute = true
         routeStatus = nil
 
-        let task = Task {
+        let task = Task(priority: .userInitiated) {
             try await routePlanningService.makeSegments(for: orderedStops, segmentModes: segmentModes)
         }
         pendingRouteTask = task
@@ -267,7 +290,7 @@ final class TripPlannerViewModel {
             clearGeneratedRoute()
             routeStatus = StatusMessage(
                 tone: .error,
-                message: L10n.routeGenerationFailed(error.localizedDescription)
+                message: routeErrorMessage(for: error)
             )
         }
     }
@@ -299,6 +322,7 @@ final class TripPlannerViewModel {
 
     private func scheduleAutoSearch(for rawText: String) {
         let keyword = rawText.trimmingCharacters(in: .whitespacesAndNewlines)
+        let normalizedKeyword = keyword.lowercased()
         pendingSearchTask?.cancel()
         placeSearchService.cancelActiveSearch()
 
@@ -308,37 +332,52 @@ final class TripPlannerViewModel {
             return
         }
 
-        activeSearchKeyword = keyword
+        if activeSearchKeyword == normalizedKeyword, isSearching || !searchResults.isEmpty {
+            return
+        }
+
+        if let cachedEntry = cachedSearchEntry(for: normalizedKeyword) {
+            activeSearchKeyword = normalizedKeyword
+            searchResults = cachedEntry.items
+            searchStatus = cachedEntry.items.isEmpty
+                ? StatusMessage(tone: .info, message: L10n.searchNoResults)
+                : nil
+            isSearching = false
+            return
+        }
+
+        activeSearchKeyword = normalizedKeyword
         searchResults = []
         searchStatus = nil
         isSearching = false
-        pendingSearchTask = Task { [weak self] in
+        pendingSearchTask = Task(priority: .utility) { [weak self] in
             do {
-                try await Task.sleep(nanoseconds: 350_000_000)
+                try await Task.sleep(nanoseconds: self?.searchDebounceNanoseconds ?? 280_000_000)
             } catch {
                 return
             }
 
             guard !Task.isCancelled else { return }
-            await self?.performSearch(keyword: keyword)
+            await self?.performSearch(keyword: keyword, normalizedKeyword: normalizedKeyword)
         }
     }
 
-    private func performSearch(keyword: String) async {
+    private func performSearch(keyword: String, normalizedKeyword: String) async {
         isSearching = true
         searchStatus = nil
 
         defer {
-            if activeSearchKeyword == keyword {
+            if activeSearchKeyword == normalizedKeyword {
                 isSearching = false
             }
         }
 
         do {
             let items = try await placeSearchService.search(keyword: keyword, limit: 12)
-            guard activeSearchKeyword == keyword else { return }
+            guard activeSearchKeyword == normalizedKeyword else { return }
 
             searchResults = items
+            cacheSearchResults(items, for: normalizedKeyword)
             searchStatus = items.isEmpty
                 ? StatusMessage(
                     tone: .info,
@@ -347,12 +386,12 @@ final class TripPlannerViewModel {
                 : nil
         } catch {
             guard !Task.isCancelled else { return }
-            guard activeSearchKeyword == keyword else { return }
+            guard activeSearchKeyword == normalizedKeyword else { return }
 
             searchResults = []
             searchStatus = StatusMessage(
                 tone: .error,
-                message: L10n.searchFailed(error.localizedDescription)
+                message: searchErrorMessage(for: error)
             )
         }
     }
@@ -451,5 +490,80 @@ final class TripPlannerViewModel {
     private func completeRoutePlanning() {
         pendingRouteTask = nil
         isPlanningRoute = false
+    }
+
+    private func cachedSearchEntry(for normalizedKeyword: String) -> CachedSearchEntry? {
+        let now = Date()
+        if var entry = searchCache[normalizedKeyword], entry.expiresAt >= now {
+            entry.lastAccessedAt = now
+            searchCache[normalizedKeyword] = entry
+            return entry
+        }
+
+        if searchCache[normalizedKeyword] != nil {
+            searchCache.removeValue(forKey: normalizedKeyword)
+        }
+        return nil
+    }
+
+    private func cacheSearchResults(_ items: [MKMapItem], for normalizedKeyword: String) {
+        let now = Date()
+        searchCache = searchCache.filter { $0.value.expiresAt >= now }
+        searchCache[normalizedKeyword] = CachedSearchEntry(
+            items: items,
+            expiresAt: now.addingTimeInterval(searchCacheTTL),
+            lastAccessedAt: now
+        )
+
+        let overflowCount = searchCache.count - maxCachedSearchEntries
+        guard overflowCount > 0 else { return }
+
+        let keysToRemove = searchCache
+            .sorted { lhs, rhs in
+                if lhs.value.lastAccessedAt == rhs.value.lastAccessedAt {
+                    return lhs.key < rhs.key
+                }
+                return lhs.value.lastAccessedAt < rhs.value.lastAccessedAt
+            }
+            .prefix(overflowCount)
+            .map(\.key)
+
+        for key in keysToRemove {
+            searchCache.removeValue(forKey: key)
+        }
+    }
+
+    private func searchErrorMessage(for error: Error) -> String {
+        guard let mkError = error as? MKError else {
+            return L10n.searchFailedGeneric
+        }
+
+        switch mkError.code {
+        case .placemarkNotFound:
+            return L10n.searchNoResults
+        case .loadingThrottled:
+            return L10n.searchRequestThrottled
+        case .serverFailure:
+            return L10n.searchServiceUnavailable
+        default:
+            return L10n.searchFailedGeneric
+        }
+    }
+
+    private func routeErrorMessage(for error: Error) -> String {
+        guard let mkError = error as? MKError else {
+            return L10n.routeGenerationFailedGeneric
+        }
+
+        switch mkError.code {
+        case .directionsNotFound:
+            return L10n.routeCannotCalculate
+        case .loadingThrottled:
+            return L10n.routeGenerationThrottled
+        case .serverFailure:
+            return L10n.routeGenerationServiceUnavailable
+        default:
+            return L10n.routeGenerationFailedGeneric
+        }
     }
 }

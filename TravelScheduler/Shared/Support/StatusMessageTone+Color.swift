@@ -13,4 +13,17 @@ extension TripPlannerViewModel.StatusMessage.Tone {
             return .red
         }
     }
+
+    var systemImage: String {
+        switch self {
+        case .info:
+            return "info.circle.fill"
+        case .success:
+            return "checkmark.circle.fill"
+        case .warning:
+            return "exclamationmark.triangle.fill"
+        case .error:
+            return "xmark.octagon.fill"
+        }
+    }
 }

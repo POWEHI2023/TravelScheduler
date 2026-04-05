@@ -28,10 +28,6 @@ enum L10n {
         text("common.close", defaultValue: "关闭")
     }
 
-    static var commonDelete: String {
-        text("common.delete", defaultValue: "删除")
-    }
-
     static var commonYes: String {
         text("common.yes", defaultValue: "是")
     }
@@ -52,10 +48,6 @@ enum L10n {
         text("common.warning_label", defaultValue: "提示")
     }
 
-    static var commonAppleMaps: String {
-        text("common.apple_maps", defaultValue: "Apple 地图")
-    }
-
     static var contentNavigationTitle: String {
         text("content.navigation.title", defaultValue: "旅行地图")
     }
@@ -64,8 +56,36 @@ enum L10n {
         text("content.button.locate_route", defaultValue: "定位路线")
     }
 
-    static var contentSettings: String {
-        text("content.button.settings", defaultValue: "设置")
+    static var contentOpenPlanner: String {
+        text("content.button.open_planner", defaultValue: "开始规划行程")
+    }
+
+    static var contentEditPlanner: String {
+        text("content.button.edit_planner", defaultValue: "编辑行程规划")
+    }
+
+    static var contentPlannerEmptyHint: String {
+        text(
+            "content.planner.empty_hint",
+            defaultValue: "搜索景点、地标或地址，然后把地点加入行程。"
+        )
+    }
+
+    static func contentPlannerPlacesSelected(_ count: Int) -> String {
+        format(
+            "content.planner.places_selected",
+            defaultValue: "已选 %lld 个地点，下一步可生成路线。",
+            Int64(count)
+        )
+    }
+
+    static func contentPlannerRouteReady(placeCount: Int, segmentCount: Int) -> String {
+        format(
+            "content.planner.route_ready",
+            defaultValue: "已选 %1$lld 个地点，当前路线共 %2$lld 段。",
+            Int64(placeCount),
+            Int64(segmentCount)
+        )
     }
 
     static func segmentOrdinal(_ index: Int) -> String {
@@ -156,8 +176,33 @@ enum L10n {
         )
     }
 
+    static func routeLegendShowSegmentAccessibility(index: Int, mode: String) -> String {
+        format(
+            "route.legend.show_segment_accessibility",
+            defaultValue: "显示第%1$lld段%2$@路线",
+            Int64(index),
+            mode
+        )
+    }
+
+    static func routeLegendHideSegmentAccessibility(index: Int, mode: String) -> String {
+        format(
+            "route.legend.hide_segment_accessibility",
+            defaultValue: "隐藏第%1$lld段%2$@路线",
+            Int64(index),
+            mode
+        )
+    }
+
+    static var routeLegendToggleVisibilityHint: String {
+        text(
+            "route.legend.toggle_visibility_hint",
+            defaultValue: "轻点可切换该分段在地图上的显示状态"
+        )
+    }
+
     static var settingsTitle: String {
-        text("settings.title", defaultValue: "设置")
+        text("settings.title", defaultValue: "行程规划")
     }
 
     static var settingsSearchSection: String {
@@ -175,8 +220,11 @@ enum L10n {
         text("settings.search.loading", defaultValue: "搜索中...")
     }
 
-    static var settingsAddToItinerary: String {
-        text("settings.search.add_to_itinerary", defaultValue: "添加到行程")
+    static var settingsSearchHint: String {
+        text(
+            "settings.search.hint",
+            defaultValue: "使用上方搜索栏查找地点，然后把地点加入当前行程。"
+        )
     }
 
     static func settingsAddToItineraryAccessibility(name: String) -> String {
@@ -271,6 +319,13 @@ enum L10n {
 
     static var settingsNoSelectedPlaces: String {
         text("settings.selected_places.empty", defaultValue: "还没有添加地点")
+    }
+
+    static var settingsSelectedPlacesHint: String {
+        text(
+            "settings.selected_places.hint",
+            defaultValue: "长按并拖动可调整顺序，向左轻扫可删除地点。"
+        )
     }
 
     static var routePlanDocumentTitle: String {
@@ -374,6 +429,10 @@ enum L10n {
         format("status.route.deleted", defaultValue: "已删除：%@", name)
     }
 
+    static func routeDeletedStops(_ count: Int) -> String {
+        format("status.route.deleted_multiple", defaultValue: "已删除 %lld 个地点", Int64(count))
+    }
+
     static var routeMinimumStops: String {
         text(
             "status.route.minimum_stops",
@@ -417,11 +476,24 @@ enum L10n {
         )
     }
 
-    static func routeGenerationFailed(_ message: String) -> String {
-        format(
-            "status.route.generation_failed",
-            defaultValue: "路线计算失败：%@",
-            message
+    static var routeGenerationFailedGeneric: String {
+        text(
+            "status.route.generation_failed_generic",
+            defaultValue: "路线计算失败，请稍后重试。"
+        )
+    }
+
+    static var routeGenerationThrottled: String {
+        text(
+            "status.route.generation_throttled",
+            defaultValue: "路线请求过于频繁，请稍后重试。"
+        )
+    }
+
+    static var routeGenerationServiceUnavailable: String {
+        text(
+            "status.route.generation_service_unavailable",
+            defaultValue: "地图服务暂时不可用，请稍后重试。"
         )
     }
 
@@ -439,8 +511,22 @@ enum L10n {
         )
     }
 
-    static func searchFailed(_ message: String) -> String {
-        format("status.search.failed", defaultValue: "搜索失败：%@", message)
+    static var searchFailedGeneric: String {
+        text("status.search.failed_generic", defaultValue: "搜索失败，请稍后重试。")
+    }
+
+    static var searchRequestThrottled: String {
+        text(
+            "status.search.request_throttled",
+            defaultValue: "搜索过于频繁，请稍后再试。"
+        )
+    }
+
+    static var searchServiceUnavailable: String {
+        text(
+            "status.search.service_unavailable",
+            defaultValue: "地图搜索暂时不可用，请稍后重试。"
+        )
     }
 
     static func routeMessage(base: String, followup: String) -> String {
@@ -566,6 +652,30 @@ enum L10n {
         format("markdown.segment.duration", defaultValue: "通行时间：%@", duration)
     }
 
+    static func markdownSegmentRouteName(_ name: String) -> String {
+        format("markdown.segment.route_name", defaultValue: "路线名称：%@", name)
+    }
+
+    static func markdownSegmentWarning(_ warning: String) -> String {
+        format("markdown.segment.warning", defaultValue: "提示：%@", warning)
+    }
+
+    static func markdownSegmentOpenInProvider(_ provider: String) -> String {
+        format(
+            "markdown.segment.open_in_provider",
+            defaultValue: "详细路线：请在 %@ 中查看",
+            provider
+        )
+    }
+
+    static func markdownSegmentTransitPreferences(_ preferences: String) -> String {
+        format(
+            "markdown.segment.transit_preferences",
+            defaultValue: "公共交通偏好：%@",
+            preferences
+        )
+    }
+
     static var routeServiceStraightLineFallback: String {
         text(
             "route.service.unable_to_calculate_straight_line",
@@ -581,10 +691,17 @@ enum L10n {
         )
     }
 
-    static var routeServiceTransitNoSolutionNoFallback: String {
+    static var routeServiceTransitETATimedOut: String {
         text(
-            "route.service.transit_no_solution_no_fallback",
-            defaultValue: "原选择为公共交通，当前地区/时段未找到可用公交方案，且无法改用步行或驾车，已使用直线连接。"
+            "route.service.transit_eta_timed_out",
+            defaultValue: "公共交通耗时查询超时，已先提供 Apple 地图跳转与估算时长。"
+        )
+    }
+
+    static var routeServiceTransitExternalFallback: String {
+        text(
+            "route.service.transit_external_fallback",
+            defaultValue: "暂未获取到公共交通详细耗时，已先提供 Apple 地图跳转与估算时长。"
         )
     }
 
@@ -647,6 +764,13 @@ enum L10n {
         text(
             "route.service.unavailable",
             defaultValue: "地图服务暂时不可用"
+        )
+    }
+
+    static var routeServiceTimedOut: String {
+        text(
+            "route.service.timed_out",
+            defaultValue: "地图服务响应超时"
         )
     }
 

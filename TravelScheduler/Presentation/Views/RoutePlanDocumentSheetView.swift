@@ -21,21 +21,19 @@ struct RoutePlanDocumentSheetView: View {
     }
 
     let markdown: String
+    private let markdownLines: [MarkdownLine]
 
     @Environment(\.dismiss) private var dismiss
     @State private var hasCopied = false
+    @State private var copyFeedbackTask: Task<Void, Never>?
+
+    init(markdown: String) {
+        self.markdown = markdown
+        markdownLines = Self.parseMarkdownLines(from: markdown)
+    }
 
     private var hasContent: Bool {
         !markdown.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
-    }
-
-    private var markdownLines: [MarkdownLine] {
-        markdown
-            .components(separatedBy: .newlines)
-            .enumerated()
-            .map { index, line in
-                parseMarkdownLine(line, id: index)
-            }
     }
 
     var body: some View {
@@ -96,6 +94,9 @@ struct RoutePlanDocumentSheetView: View {
                         .padding(.bottom, 12)
                 }
             }
+            .onDisappear {
+                copyFeedbackTask?.cancel()
+            }
         }
     }
 
@@ -103,7 +104,21 @@ struct RoutePlanDocumentSheetView: View {
         #if canImport(UIKit)
         UIPasteboard.general.string = markdown
         #endif
+
+        copyFeedbackTask?.cancel()
         hasCopied = true
+        copyFeedbackTask = Task {
+            do {
+                try await Task.sleep(nanoseconds: 2_000_000_000)
+            } catch {
+                return
+            }
+
+            guard !Task.isCancelled else { return }
+            await MainActor.run {
+                hasCopied = false
+            }
+        }
     }
 
     @ViewBuilder
@@ -151,7 +166,16 @@ struct RoutePlanDocumentSheetView: View {
         }
     }
 
-    private func parseMarkdownLine(_ rawLine: String, id: Int) -> MarkdownLine {
+    private static func parseMarkdownLines(from markdown: String) -> [MarkdownLine] {
+        markdown
+            .components(separatedBy: .newlines)
+            .enumerated()
+            .map { index, line in
+                parseMarkdownLine(line, id: index)
+            }
+    }
+
+    private static func parseMarkdownLine(_ rawLine: String, id: Int) -> MarkdownLine {
         let trimmed = rawLine.trimmingCharacters(in: .whitespaces)
         guard !trimmed.isEmpty else {
             return MarkdownLine(id: id, style: .spacer, text: "")
