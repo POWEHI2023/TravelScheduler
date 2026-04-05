@@ -1952,19 +1952,19 @@
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Generate Route from Selected Endpoints"
+            "value" : "Generate Route"
           }
         },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "按已选起终点生成路线"
+            "value" : "生成路线"
           }
         },
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "按已選起終點產生路線"
+            "value" : "產生路線"
           }
         }
       }
@@ -2596,19 +2596,19 @@
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Loop route disabled, please confirm the end point"
+            "value" : "Switched to non-loop route"
           }
         },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "已取消环线，请确认终点"
+            "value" : "已切换为非环线"
           }
         },
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "已取消環線，請確認終點"
+            "value" : "已切換為非環線"
           }
         }
       }
@@ -3217,10 +3217,10 @@
     "已切换为环线" : {
 
     },
-    "已删除：%@" : {
+    "已切换为非环线" : {
 
     },
-    "已取消环线，请确认终点" : {
+    "已删除：%@" : {
 
     },
     "已复制到剪贴板" : {
@@ -3254,9 +3254,6 @@
 
     },
     "总路程：%@（不含需在 Apple 地图中查看的公共交通实际轨迹）" : {
-
-    },
-    "按已选起终点生成路线" : {
 
     },
     "提示" : {
@@ -3344,6 +3341,9 @@
     "生成时间：%@" : {
 
     },
+    "生成路线" : {
+
+    },
     "生成路线规划文档" : {
 
     },
@@ -3365,9 +3365,6 @@
           }
         }
       }
-    },
-    "终点" : {
-
     },
     "终点：%@" : {
 
@@ -3429,9 +3426,6 @@
           }
         }
       }
-    },
-    "起点" : {
-
     },
     "起点：%@" : {
 

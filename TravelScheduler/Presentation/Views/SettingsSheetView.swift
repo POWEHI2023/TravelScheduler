@@ -83,21 +83,7 @@ struct SettingsSheetView: View {
             if viewModel.plannedStops.isEmpty {
                 ContentUnavailableView(L10n.settingsAddPlacesFirst, systemImage: "mappin.and.ellipse")
             } else {
-                Picker(L10n.settingsRouteStart, selection: startStopBinding) {
-                    ForEach(viewModel.plannedStops) { stop in
-                        Text(stop.name).tag(Optional(stop.id))
-                    }
-                }
-
                 Toggle(L10n.settingsLoopToggle, isOn: loopToStartBinding)
-
-                if !viewModel.loopToStart {
-                    Picker(L10n.settingsRouteEnd, selection: endStopBinding) {
-                        ForEach(viewModel.plannedStops) { stop in
-                            Text(stop.name).tag(Optional(stop.id))
-                        }
-                    }
-                }
             }
 
             if let routeOrderDescription = viewModel.routeOrderDescription {
@@ -258,20 +244,6 @@ struct SettingsSheetView: View {
         Binding(
             get: { viewModel.searchText },
             set: viewModel.updateSearchText
-        )
-    }
-
-    private var startStopBinding: Binding<UUID?> {
-        Binding(
-            get: { viewModel.startStopID },
-            set: viewModel.updateStartStopID
-        )
-    }
-
-    private var endStopBinding: Binding<UUID?> {
-        Binding(
-            get: { viewModel.endStopID },
-            set: viewModel.updateEndStopID
         )
     }
 

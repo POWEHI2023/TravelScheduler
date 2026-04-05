@@ -199,14 +199,6 @@ enum L10n {
         text("settings.route.add_places_first", defaultValue: "请先添加地点")
     }
 
-    static var settingsRouteStart: String {
-        text("settings.route.start", defaultValue: "起点")
-    }
-
-    static var settingsRouteEnd: String {
-        text("settings.route.end", defaultValue: "终点")
-    }
-
     static var settingsLoopToggle: String {
         text(
             "settings.route.loop_toggle",
@@ -221,7 +213,7 @@ enum L10n {
     static var settingsGenerateRoute: String {
         text(
             "settings.route.generate",
-            defaultValue: "按已选起终点生成路线"
+            defaultValue: "生成路线"
         )
     }
 
@@ -375,7 +367,7 @@ enum L10n {
     static var routeLoopDisabled: String {
         text(
             "status.route.loop_disabled",
-            defaultValue: "已取消环线，请确认终点"
+            defaultValue: "已切换为非环线"
         )
     }
 

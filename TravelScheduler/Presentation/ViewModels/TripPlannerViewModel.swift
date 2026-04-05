@@ -39,8 +39,6 @@ final class TripPlannerViewModel {
     private(set) var isPlanningRoute = false
     private(set) var searchStatus: StatusMessage?
     private(set) var routeStatus: StatusMessage?
-    private(set) var startStopID: UUID?
-    private(set) var endStopID: UUID?
     private(set) var loopToStart = false
 
     private let defaultSegmentMode: TravelMode = .driving
@@ -131,8 +129,6 @@ final class TripPlannerViewModel {
     private var currentDraft: TripPlanDraft {
         TripPlanDraft(
             plannedStops: plannedStops,
-            selectedStartStopID: startStopID,
-            selectedEndStopID: endStopID,
             loopToStart: loopToStart
         )
     }
@@ -154,28 +150,8 @@ final class TripPlannerViewModel {
 
     // MARK: - Endpoint and Segment State
 
-    func updateStartStopID(_ newStartID: UUID?) {
-        startStopID = newStartID
-        if loopToStart {
-            endStopID = newStartID
-        }
-
-        invalidateRouteAfterPlanChange(baseMessage: L10n.routeStartUpdated)
-    }
-
-    func updateEndStopID(_ newEndID: UUID?) {
-        endStopID = newEndID
-
-        invalidateRouteAfterPlanChange(baseMessage: L10n.routeEndUpdated)
-    }
-
     func updateLoopToStart(_ enabled: Bool) {
         loopToStart = enabled
-        if enabled {
-            endStopID = startStopID
-        } else {
-            endStopID = preferredEndStopIDAfterDisablingLoop()
-        }
 
         let baseMessage = enabled ? L10n.routeLoopEnabled : L10n.routeLoopDisabled
         invalidateRouteAfterPlanChange(baseMessage: baseMessage)
@@ -197,8 +173,7 @@ final class TripPlannerViewModel {
         }
 
         invalidateRouteAfterPlanChange(
-            baseMessage: L10n.routeSegmentModeUpdated,
-            shouldNormalizePlanState: false
+            baseMessage: L10n.routeSegmentModeUpdated
         )
     }
 
@@ -388,68 +363,23 @@ final class TripPlannerViewModel {
         searchStatus = message
     }
 
-    private func normalizePlanState() -> String? {
+    private func normalizePlanState() {
         let draft = currentDraft
-        let normalizedStartStopID = draft.normalizedStartStopID
-        let normalizedEndStopID = draft.normalizedEndStopID
-        var messages: [String] = []
-
-        if startStopID != normalizedStartStopID {
-            startStopID = normalizedStartStopID
-            if let stopName = draft.normalizedStartStop?.name {
-                messages.append(L10n.routeStartAdjusted(stopName))
-            }
-        }
-
-        if endStopID != normalizedEndStopID {
-            endStopID = normalizedEndStopID
-            if let stopName = draft.normalizedEndStop?.name {
-                messages.append(
-                    loopToStart
-                        ? L10n.routeEndSynced(stopName)
-                        : L10n.routeEndAdjusted(stopName)
-                )
-            }
-        }
-
         let validLegs = Set(draft.routeLegs)
         segmentModesByLeg = segmentModesByLeg.filter { validLegs.contains($0.key) }
-
-        return messages.isEmpty
-            ? nil
-            : (ListFormatter.localizedString(byJoining: messages) ?? messages.joined(separator: ", "))
     }
 
-    private func composeRouteMessage(
-        baseMessage: String,
-        adjustmentMessage: String?
-    ) -> String {
+    private func composeRouteMessage(baseMessage: String) -> String {
         let followup = currentDraft.canGenerateRoute
             ? L10n.routeInvalidationStatus
             : L10n.routeMinimumStops
 
-        if let adjustmentMessage {
-            return L10n.routeMessage(
-                base: baseMessage,
-                adjustment: adjustmentMessage,
-                followup: followup
-            )
-        }
-
         return L10n.routeMessage(base: baseMessage, followup: followup)
     }
 
-    private func invalidateRouteAfterPlanChange(
-        baseMessage: String,
-        shouldNormalizePlanState: Bool = true
-    ) {
-        let adjustmentMessage = shouldNormalizePlanState ? normalizePlanState() : nil
-        invalidateRoute(
-            message: composeRouteMessage(
-                baseMessage: baseMessage,
-                adjustmentMessage: adjustmentMessage
-            )
-        )
+    private func invalidateRouteAfterPlanChange(baseMessage: String) {
+        normalizePlanState()
+        invalidateRoute(message: composeRouteMessage(baseMessage: baseMessage))
     }
 
     private func applyGeneratedRoute(_ segments: [RouteSegment]) {
@@ -506,15 +436,6 @@ final class TripPlannerViewModel {
         cancelPendingRouteGeneration()
         clearGeneratedRoute()
         routeStatus = StatusMessage(tone: .info, message: message)
-    }
-
-    private func preferredEndStopIDAfterDisablingLoop() -> UUID? {
-        if let endStopID, endStopID != startStopID {
-            return endStopID
-        }
-
-        return plannedStops.reversed().first(where: { $0.id != startStopID })?.id
-            ?? plannedStops.last?.id
     }
 
     private func cancelPendingRouteGeneration() {
