@@ -22,14 +22,14 @@ enum RoutePlanDocumentBuilder {
         lines.append("## \(L10n.markdownOverviewSection)")
         lines.append("")
         lines.append("- \(L10n.markdownGeneratedAt(AppFormatters.timestamp(generatedAt)))")
-        lines.append("- \(L10n.markdownStart(context.draft.normalizedStartStop?.name ?? "—"))")
-        lines.append("- \(L10n.markdownEnd(context.draft.normalizedEndStop?.name ?? "—"))")
+        lines.append("- \(L10n.markdownStart(singleLineText(context.draft.startStop?.name ?? "—")))")
+        lines.append("- \(L10n.markdownEnd(singleLineText(context.draft.endStop?.name ?? "—")))")
         lines.append(
             "- \(L10n.markdownIsLoop(context.draft.loopToStart ? L10n.commonYes : L10n.commonNo))"
         )
 
         if let routeOrderDescription = context.draft.routeOrderDescription {
-            lines.append("- \(L10n.markdownRouteOrder(routeOrderDescription))")
+            lines.append("- \(L10n.markdownRouteOrder(singleLineText(routeOrderDescription)))")
         }
 
         if !context.routeSegments.isEmpty {
@@ -44,10 +44,10 @@ enum RoutePlanDocumentBuilder {
         }
 
         if let routeStatusMessage = context.routeStatusMessage {
-            lines.append("- \(L10n.markdownCurrentStatus(routeStatusMessage))")
+            lines.append("- \(L10n.markdownCurrentStatus(singleLineText(routeStatusMessage)))")
         }
 
-        lines.append("- \(L10n.markdownTravelSuggestion(context.travelSuggestion))")
+        lines.append("- \(L10n.markdownTravelSuggestion(singleLineText(context.travelSuggestion)))")
         lines.append("")
         lines.append("## \(L10n.markdownPlacesSection)")
         lines.append("")
@@ -57,9 +57,9 @@ enum RoutePlanDocumentBuilder {
         } else {
             for (index, stop) in context.draft.plannedStops.enumerated() {
                 let roleSuffix = stopRoleSuffix(for: stop, draft: context.draft)
-                lines.append("\(index + 1). \(stop.name)\(roleSuffix)")
+                lines.append("\(index + 1). \(singleLineText(stop.name))\(roleSuffix)")
 
-                let trimmedSubtitle = stop.subtitle.trimmingCharacters(in: .whitespacesAndNewlines)
+                let trimmedSubtitle = singleLineText(stop.subtitle)
                 if !trimmedSubtitle.isEmpty {
                     lines.append("   - \(L10n.markdownAddress(trimmedSubtitle))")
                 }
@@ -77,7 +77,7 @@ enum RoutePlanDocumentBuilder {
                 lines.append("### \(L10n.markdownSegmentTitle(index + 1))")
                 lines.append("")
                 lines.append(
-                    "- \(L10n.markdownSegmentStartEnd(from: segment.from.name, to: segment.to.name))"
+                    "- \(L10n.markdownSegmentStartEnd(from: singleLineText(segment.from.name), to: singleLineText(segment.to.name)))"
                 )
                 lines.append("- \(L10n.markdownSegmentMode(segmentModeDescription(for: segment)))")
                 lines.append(
@@ -91,8 +91,8 @@ enum RoutePlanDocumentBuilder {
     }
 
     private static func stopRoleSuffix(for stop: TripStop, draft: TripPlanDraft) -> String {
-        let isStart = stop.id == draft.normalizedStartStopID
-        let isEnd = stop.id == draft.normalizedEndStopID
+        let isStart = stop.id == draft.startStopID
+        let isEnd = stop.id == draft.endStopID
 
         if isStart && isEnd {
             return L10n.routeStopRoleStartEnd
@@ -118,5 +118,19 @@ enum RoutePlanDocumentBuilder {
             actual: segment.travelMode.localizedName,
             original: segment.requestedTravelMode.localizedName
         )
+    }
+
+    private static func singleLineText(_ text: String) -> String {
+        let normalizedText = text
+            .replacingOccurrences(of: "\r\n", with: "\n")
+            .replacingOccurrences(of: "\r", with: "\n")
+            .replacingOccurrences(of: "\t", with: " ")
+
+        return normalizedText
+            .components(separatedBy: .newlines)
+            .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
+            .filter { !$0.isEmpty }
+            .joined(separator: " ")
+            .trimmingCharacters(in: .whitespacesAndNewlines)
     }
 }

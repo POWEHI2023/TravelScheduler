@@ -32,8 +32,13 @@ struct ContentView: View {
                     }
                 }
             }
-            .sheet(isPresented: $showSettings) {
+            .sheet(isPresented: $showSettings, onDismiss: {
+                viewModel.onSettingsSheetDisappear()
+            }) {
                 SettingsSheetView(viewModel: viewModel, isPresented: $showSettings)
+                    .presentationDetents([.large])
+                    .presentationContentInteraction(.scrolls)
+                    .presentationDragIndicator(.visible)
             }
             .sheet(isPresented: $showRouteSegmentsSheet) {
                 RouteSegmentsSheetView(segments: viewModel.routeSegments)

@@ -216,18 +216,9 @@ struct SettingsSheetView: View {
                         }
 
                         Spacer(minLength: 8)
-
-                        Button(role: .destructive) {
-                            viewModel.removeStop(at: idx)
-                        } label: {
-                            Image(systemName: "trash")
-                                .font(.caption)
-                        }
-                        .buttonStyle(.borderless)
-                        .accessibilityLabel(L10n.settingsDeleteAccessibility(name: stop.name))
                     }
                     .padding(.vertical, 2)
-                    .swipeActions(edge: .trailing, allowsFullSwipe: true) {
+                    .swipeActions(edge: .trailing, allowsFullSwipe: false) {
                         Button(role: .destructive) {
                             viewModel.removeStop(at: idx)
                         } label: {

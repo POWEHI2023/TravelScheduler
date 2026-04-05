@@ -17,6 +17,46 @@ final class MapKitRoutePlanningService: RoutePlanningServing {
         let resolvedMode: TravelMode
     }
 
+    private struct CachedSegmentPayload {
+        let requestedTravelMode: TravelMode
+        let travelMode: TravelMode
+        let distance: CLLocationDistance
+        let expectedTravelTime: TimeInterval
+        let polyline: MKPolyline
+        let routeName: String?
+        let details: [RouteSegment.Detail]
+        let representation: RouteSegment.Representation
+        let mapRenderStyle: RouteSegment.MapRenderStyle
+
+        init(segment: RouteSegment) {
+            requestedTravelMode = segment.requestedTravelMode
+            travelMode = segment.travelMode
+            distance = segment.distance
+            expectedTravelTime = segment.expectedTravelTime
+            polyline = segment.polyline
+            routeName = segment.routeName
+            details = segment.details
+            representation = segment.representation
+            mapRenderStyle = segment.mapRenderStyle
+        }
+
+        func makeSegment(from sourceStop: TripStop, to destinationStop: TripStop) -> RouteSegment {
+            RouteSegment(
+                from: sourceStop,
+                to: destinationStop,
+                requestedTravelMode: requestedTravelMode,
+                travelMode: travelMode,
+                distance: distance,
+                expectedTravelTime: expectedTravelTime,
+                polyline: polyline,
+                routeName: routeName,
+                details: details,
+                representation: representation,
+                mapRenderStyle: mapRenderStyle
+            )
+        }
+    }
+
     private struct SegmentRequestKey: Hashable {
         let fromKey: String
         let toKey: String
@@ -24,7 +64,7 @@ final class MapKitRoutePlanningService: RoutePlanningServing {
     }
 
     private struct CachedSegmentEntry {
-        let segment: RouteSegment
+        let payload: CachedSegmentPayload
         let expiresAt: Date
         var lastAccessedAt: Date
     }
@@ -55,7 +95,12 @@ final class MapKitRoutePlanningService: RoutePlanningServing {
                 mode: mode
             )
 
-            if let cachedSegment = resolveCachedSegment(for: cacheKey, now: now) {
+            if let cachedSegment = resolveCachedSegment(
+                for: cacheKey,
+                sourceStop: sourceStop,
+                destinationStop: destinationStop,
+                now: now
+            ) {
                 segments.append(cachedSegment)
                 continue
             }
@@ -79,14 +124,6 @@ final class MapKitRoutePlanningService: RoutePlanningServing {
         to destinationStop: TripStop,
         preferredMode: TravelMode
     ) async throws -> RouteSegment {
-        if sameCoordinate(sourceStop.coordinate, destinationStop.coordinate) {
-            return makeSameCoordinateSegment(
-                from: sourceStop,
-                to: destinationStop,
-                requestedTravelMode: preferredMode
-            )
-        }
-
         switch preferredMode {
         case .transit:
             return try await makeTransitSegment(from: sourceStop, to: destinationStop)
@@ -180,10 +217,6 @@ final class MapKitRoutePlanningService: RoutePlanningServing {
     private func modeForSegment(at index: Int, segmentModes: [TravelMode]) -> TravelMode {
         guard segmentModes.indices.contains(index) else { return .driving }
         return segmentModes[index]
-    }
-
-    private func sameCoordinate(_ lhs: CLLocationCoordinate2D, _ rhs: CLLocationCoordinate2D) -> Bool {
-        abs(lhs.latitude - rhs.latitude) < 0.00001 && abs(lhs.longitude - rhs.longitude) < 0.00001
     }
 
     private func resolveRoute(
@@ -337,25 +370,6 @@ final class MapKitRoutePlanningService: RoutePlanningServing {
             details: [],
             representation: .externalTransit(transitReference),
             mapRenderStyle: .connector
-        )
-    }
-
-    private func makeSameCoordinateSegment(
-        from sourceStop: TripStop,
-        to destinationStop: TripStop,
-        requestedTravelMode: TravelMode
-    ) -> RouteSegment {
-        return RouteSegment(
-            from: sourceStop,
-            to: destinationStop,
-            requestedTravelMode: requestedTravelMode,
-            travelMode: requestedTravelMode,
-            distance: 0,
-            expectedTravelTime: 0,
-            polyline: directPolyline(from: sourceStop, to: destinationStop),
-            details: [makeWarningDetail(L10n.routeServiceSameCoordinate)],
-            representation: .inAppRoute,
-            mapRenderStyle: requestedTravelMode == .transit ? .connector : .solid
         )
     }
 
@@ -578,6 +592,8 @@ final class MapKitRoutePlanningService: RoutePlanningServing {
 
     private func resolveCachedSegment(
         for key: SegmentRequestKey,
+        sourceStop: TripStop,
+        destinationStop: TripStop,
         now: Date
     ) -> RouteSegment? {
         withCacheLock {
@@ -589,7 +605,7 @@ final class MapKitRoutePlanningService: RoutePlanningServing {
 
             cachedEntry.lastAccessedAt = now
             cachedSegments[key] = cachedEntry
-            return cachedEntry.segment
+            return cachedEntry.payload.makeSegment(from: sourceStop, to: destinationStop)
         }
     }
 
@@ -607,7 +623,7 @@ final class MapKitRoutePlanningService: RoutePlanningServing {
     ) {
         let now = Date()
         let entry = CachedSegmentEntry(
-            segment: segment,
+            payload: CachedSegmentPayload(segment: segment),
             expiresAt: now.addingTimeInterval(cacheTTL(for: segment)),
             lastAccessedAt: now
         )

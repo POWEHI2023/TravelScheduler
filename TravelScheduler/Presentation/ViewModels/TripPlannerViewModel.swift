@@ -141,6 +141,10 @@ final class TripPlannerViewModel {
         cancelPendingRouteGeneration()
     }
 
+    func onSettingsSheetDisappear() {
+        clearSearchState(message: nil)
+    }
+
     // MARK: - Search
 
     func updateSearchText(_ newValue: String) {
@@ -277,7 +281,7 @@ final class TripPlannerViewModel {
             rect = rect.isNull ? stopRect : rect.union(stopRect)
         }
 
-        for segment in routeSegments {
+        for segment in routeSegments where segment.showsOnMap && !hiddenSegmentIDs.contains(segment.id) {
             let segmentRect = segment.polyline.boundingMapRect
             rect = rect.isNull ? segmentRect : rect.union(segmentRect)
         }

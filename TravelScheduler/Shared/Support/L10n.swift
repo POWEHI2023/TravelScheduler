@@ -98,10 +98,6 @@ enum L10n {
         text("route.segment.hide_details", defaultValue: "收起详细路线")
     }
 
-    static var routeSegmentNoDetails: String {
-        text("route.segment.no_details", defaultValue: "暂无更详细步骤信息")
-    }
-
     static func routeSegmentProviderHandlesDetails(_ provider: String) -> String {
         format(
             "route.segment.provider_handles_details",
@@ -277,10 +273,6 @@ enum L10n {
         text("settings.selected_places.empty", defaultValue: "还没有添加地点")
     }
 
-    static func settingsDeleteAccessibility(name: String) -> String {
-        format("settings.delete_accessibility", defaultValue: "删除%@", name)
-    }
-
     static var routePlanDocumentTitle: String {
         text("route_plan_document.title", defaultValue: "路线规划文档")
     }
@@ -350,14 +342,6 @@ enum L10n {
 
     static var routeInvalidationStatus: String {
         text("status.route.invalidate", defaultValue: "请重新生成路线。")
-    }
-
-    static var routeStartUpdated: String {
-        text("status.route.start_updated", defaultValue: "起点已更新")
-    }
-
-    static var routeEndUpdated: String {
-        text("status.route.end_updated", defaultValue: "终点已更新")
     }
 
     static var routeLoopEnabled: String {
@@ -459,45 +443,11 @@ enum L10n {
         format("status.search.failed", defaultValue: "搜索失败：%@", message)
     }
 
-    static func routeStartAdjusted(_ stopName: String) -> String {
-        format(
-            "route.adjustment.start_adjusted",
-            defaultValue: "起点已调整为%@",
-            stopName
-        )
-    }
-
-    static func routeEndSynced(_ stopName: String) -> String {
-        format(
-            "route.adjustment.end_synced",
-            defaultValue: "终点已同步为%@",
-            stopName
-        )
-    }
-
-    static func routeEndAdjusted(_ stopName: String) -> String {
-        format(
-            "route.adjustment.end_adjusted",
-            defaultValue: "终点已调整为%@",
-            stopName
-        )
-    }
-
     static func routeMessage(base: String, followup: String) -> String {
         format(
             "route.message.without_adjustment",
             defaultValue: "%1$@。%2$@",
             base,
-            followup
-        )
-    }
-
-    static func routeMessage(base: String, adjustment: String, followup: String) -> String {
-        format(
-            "route.message.with_adjustment",
-            defaultValue: "%1$@%2$@。%3$@",
-            base,
-            adjustment,
             followup
         )
     }
@@ -659,13 +609,6 @@ enum L10n {
         text(
             "route.service.apple_maps_transit_route_name",
             defaultValue: "Apple 地图公共交通"
-        )
-    }
-
-    static var routeServiceSameCoordinate: String {
-        text(
-            "route.service.same_coordinate",
-            defaultValue: "该分段起终点坐标相同，已按原地停留处理。"
         )
     }
 

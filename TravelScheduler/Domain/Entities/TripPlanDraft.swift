@@ -13,24 +13,24 @@ struct TripPlanDraft {
     let plannedStops: [TripStop]
     let loopToStart: Bool
 
-    var normalizedStartStop: TripStop? {
+    var startStop: TripStop? {
         plannedStops.first
     }
 
-    var normalizedEndStop: TripStop? {
+    var endStop: TripStop? {
         if loopToStart {
-            return normalizedStartStop
+            return startStop
         }
 
         return plannedStops.last
     }
 
-    var normalizedStartStopID: UUID? {
-        normalizedStartStop?.id
+    var startStopID: UUID? {
+        startStop?.id
     }
 
-    var normalizedEndStopID: UUID? {
-        normalizedEndStop?.id
+    var endStopID: UUID? {
+        endStop?.id
     }
 
     var orderedStops: [TripStop] {
@@ -38,7 +38,7 @@ struct TripPlanDraft {
             return []
         }
 
-        if loopToStart, let start = normalizedStartStop {
+        if loopToStart, let start = startStop {
             var orderedStops = plannedStops
             orderedStops.append(start)
             return orderedStops

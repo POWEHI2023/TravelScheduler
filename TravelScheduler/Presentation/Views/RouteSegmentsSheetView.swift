@@ -88,11 +88,7 @@ struct RouteSegmentsSheetView: View {
                     .foregroundStyle(.secondary)
             }
 
-            if isExpanded && stepDetails.isEmpty {
-                Text(L10n.routeSegmentNoDetails)
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-            } else if isExpanded {
+            if isExpanded {
                 ForEach(stepDetails) { detail in
                     VStack(alignment: .leading, spacing: 3) {
                         Text("\(detail.transportDescription) · \(AppFormatters.distance(detail.distance))")

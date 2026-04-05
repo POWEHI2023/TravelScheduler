@@ -2,6 +2,8 @@ import Foundation
 import MapKit
 
 struct TripStop: Identifiable {
+    private static let coordinateIdentityScale = 100_000.0
+
     let id: UUID
     let name: String
     let subtitle: String
@@ -19,10 +21,7 @@ struct TripStop: Identifiable {
     }
 
     var routeCacheKey: String {
-        let latitude = Int((coordinate.latitude * 100_000).rounded())
-        let longitude = Int((coordinate.longitude * 100_000).rounded())
-        let normalizedName = name.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
-        return "\(normalizedName)|\(latitude)|\(longitude)"
+        semanticIdentityKey
     }
 
     var mapsCoordinateQueryValue: String {
@@ -35,8 +34,20 @@ struct TripStop: Identifiable {
     }
 
     func isSemanticallyDuplicate(of other: TripStop) -> Bool {
-        name == other.name &&
-        abs(coordinate.latitude - other.coordinate.latitude) < 0.0001 &&
-        abs(coordinate.longitude - other.coordinate.longitude) < 0.0001
+        semanticIdentityKey == other.semanticIdentityKey
+    }
+
+    private var semanticIdentityKey: String {
+        "\(normalizedName)|\(coordinateIdentityComponent)"
+    }
+
+    private var normalizedName: String {
+        name.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+    }
+
+    private var coordinateIdentityComponent: String {
+        let latitude = Int((coordinate.latitude * Self.coordinateIdentityScale).rounded())
+        let longitude = Int((coordinate.longitude * Self.coordinateIdentityScale).rounded())
+        return "\(latitude)|\(longitude)"
     }
 }
